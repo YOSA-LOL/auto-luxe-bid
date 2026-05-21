@@ -50,7 +50,7 @@ function CarPage() {
   useEffect(() => {
     if (!car.isLive) return;
     const t = setInterval(() => {
-      setViewers((v) => v + (Math.random() > 0.5 ? 1 : -1));
+      setViewers((v: number) => v + (Math.random() > 0.5 ? 1 : -1));
     }, 3500);
     return () => clearInterval(t);
   }, [car.isLive]);
@@ -63,7 +63,7 @@ function CarPage() {
       toast.error(`Minimum bid is ${formatPrice(minNext)}`);
       return;
     }
-    setBids((b) => [{ user: "You", amount, at: Date.now() }, ...b]);
+    setBids((b: BidEntry[]) => [{ user: "You", amount, at: Date.now() }, ...b]);
     setBid(amount + (car.minRaise ?? 0));
     toast.success(`Bid placed: ${formatPrice(amount)}`);
   };
@@ -194,7 +194,7 @@ function CarPage() {
                       className="flex-1 bg-background/50 border border-border rounded-lg px-3 py-3 font-display font-semibold tabular-nums outline-none focus:border-primary"
                     />
                     <Button
-                      onClick={() => setBid((b) => b + (car.minRaise ?? 1000))}
+                      onClick={() => setBid((b: number) => b + (car.minRaise ?? 1000))}
                       variant="outline"
                       size="icon"
                       className="glass h-auto"
