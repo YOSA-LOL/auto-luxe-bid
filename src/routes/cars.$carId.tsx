@@ -7,7 +7,11 @@ import { CountdownTimer } from "@/components/CountdownTimer";
 import { getCar, CARS, formatPrice, formatNumber, seedBids, BidEntry } from "@/lib/mock-data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Heart, Share2, Flag, Radio, Users, Gavel, CircleCheck, Gauge, Fuel, Cog, Palette, Hash, MapPin, TrendingUp, Plus } from "lucide-react";
+import {
+  Heart, Share2, Flag, Radio, Users, Gavel, CircleCheck,
+  Gauge, Fuel, Cog, Palette, Hash, MapPin, TrendingUp, Plus,
+  MessageCircle, Phone, Mail, X,
+} from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/cars/$carId")({
@@ -31,7 +35,7 @@ export const Route = createFileRoute("/cars/$carId")({
     <div className="min-h-screen flex items-center justify-center">
       <div className="text-center">
         <h1 className="font-display text-3xl font-bold">Car not found</h1>
-        <Link to="/browse" className="text-primary-glow underline mt-4 inline-block">Back to browse</Link>
+        <Link to="/browse" search={{ q: "" }} className="text-primary-glow underline mt-4 inline-block">Back to browse</Link>
       </div>
     </div>
   ),
@@ -45,8 +49,18 @@ function CarPage() {
     car.isLive ? seedBids(car.currentBid!, car.minRaise!) : []
   );
   const [viewers, setViewers] = useState(car.viewers ?? 0);
+  const [liked, setLiked] = useState(false);
+  const [selectedImg, setSelectedImg] = useState(0);
+  const [showContact, setShowContact] = useState(false);
+  const [showReserve, setShowReserve] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [chatMsg, setChatMsg] = useState("");
+  const [chatHistory, setChatHistory] = useState<{ from: "you" | "dealer"; text: string }[]>([
+    { from: "dealer", text: `Hi! I'm the dealer for ${car.title}. How can I help you today?` },
+  ]);
 
-  // simulate other people bidding
+  const galleryImages = [car.image, ...CARS.filter((c) => c.id !== car.id).slice(0, 3).map((c) => c.image)];
+
   useEffect(() => {
     if (!car.isLive) return;
     const t = setInterval(() => {
@@ -64,8 +78,32 @@ function CarPage() {
       return;
     }
     setBids((b: BidEntry[]) => [{ user: "You", amount, at: Date.now() }, ...b]);
-    setBid(amount + (car.minRaise ?? 0));
-    toast.success(`Bid placed: ${formatPrice(amount)}`);
+    setBid(amount + (car.minRaise ?? 1000));
+    toast.success(`Bid placed: ${formatPrice(amount)} ✓`);
+  };
+
+  const handleShare = async () => {
+    const url = window.location.href;
+    if (navigator.share) {
+      await navigator.share({ title: car.title, url });
+    } else {
+      await navigator.clipboard.writeText(url);
+      toast.success("Link copied to clipboard!");
+    }
+  };
+
+  const handleFlag = () => {
+    toast.info("Report submitted. Our team will review this listing within 24 hours.");
+  };
+
+  const sendChat = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatMsg.trim()) return;
+    setChatHistory((h) => [...h, { from: "you", text: chatMsg }]);
+    setChatMsg("");
+    setTimeout(() => {
+      setChatHistory((h) => [...h, { from: "dealer", text: "Thanks for your message! I'll get back to you shortly." }]);
+    }, 1200);
   };
 
   const related = CARS.filter((c) => c.id !== car.id).slice(0, 3);
@@ -77,16 +115,17 @@ function CarPage() {
 
         {/* Breadcrumb */}
         <div className="text-sm text-muted-foreground mb-6">
-          <Link to="/browse" className="hover:text-foreground">Browse</Link>
+          <Link to="/browse" search={{ q: "" }} className="hover:text-foreground">Browse</Link>
           <span className="mx-2">/</span>
           <span className="text-foreground">{car.title}</span>
         </div>
 
         <div className="grid lg:grid-cols-[1.5fr_1fr] gap-8">
-          {/* LEFT: Gallery + details */}
+          {/* LEFT */}
           <div className="space-y-6">
+            {/* Main image */}
             <div className="relative rounded-3xl overflow-hidden border border-border/60 shadow-elegant">
-              <img src={car.image} alt={car.title} width={1280} height={896} className="w-full h-auto" />
+              <img src={galleryImages[selectedImg]} alt={car.title} width={1280} height={896} className="w-full h-auto" />
               <div className="absolute top-4 left-4 flex gap-2">
                 {car.isLive && (
                   <Badge className="bg-[var(--live)] text-white border-0 animate-pulse-live gap-1">
@@ -98,18 +137,31 @@ function CarPage() {
                 </Badge>
               </div>
               <div className="absolute top-4 right-4 flex gap-2">
-                <button className="h-10 w-10 rounded-full glass flex items-center justify-center"><Heart className="h-4 w-4" /></button>
-                <button className="h-10 w-10 rounded-full glass flex items-center justify-center"><Share2 className="h-4 w-4" /></button>
-                <button className="h-10 w-10 rounded-full glass flex items-center justify-center"><Flag className="h-4 w-4" /></button>
+                <button
+                  onClick={() => { setLiked(!liked); toast.success(liked ? "Removed from favorites" : "Added to favorites ♥"); }}
+                  className={`h-10 w-10 rounded-full glass flex items-center justify-center transition-smooth ${liked ? "text-red-500" : ""}`}
+                >
+                  <Heart className={`h-4 w-4 ${liked ? "fill-current" : ""}`} />
+                </button>
+                <button onClick={handleShare} className="h-10 w-10 rounded-full glass flex items-center justify-center">
+                  <Share2 className="h-4 w-4" />
+                </button>
+                <button onClick={handleFlag} className="h-10 w-10 rounded-full glass flex items-center justify-center">
+                  <Flag className="h-4 w-4" />
+                </button>
               </div>
             </div>
 
-            {/* Thumbnails (mock) */}
+            {/* Thumbnails */}
             <div className="grid grid-cols-4 gap-3">
-              {CARS.slice(0, 4).map((c) => (
-                <div key={c.id} className="aspect-[16/11] rounded-xl overflow-hidden border border-border/40 cursor-pointer hover:border-primary/60 transition-smooth">
-                  <img src={c.image} alt="" loading="lazy" width={400} height={275} className="h-full w-full object-cover" />
-                </div>
+              {galleryImages.map((img, i) => (
+                <button
+                  key={i}
+                  onClick={() => setSelectedImg(i)}
+                  className={`aspect-[16/11] rounded-xl overflow-hidden border transition-smooth ${selectedImg === i ? "border-primary shadow-glow" : "border-border/40 hover:border-primary/60"}`}
+                >
+                  <img src={img} alt="" loading="lazy" width={400} height={275} className="h-full w-full object-cover" />
+                </button>
               ))}
             </div>
 
@@ -146,14 +198,14 @@ function CarPage() {
               </div>
             </div>
 
-            {/* Condition report */}
+            {/* Condition */}
             <div className="rounded-2xl bg-gradient-card border border-border/60 p-6">
               <h2 className="font-display font-semibold text-lg mb-4">Condition Report</h2>
               <div className="grid sm:grid-cols-3 gap-3">
                 {[
-                  { l: "Overall", v: car.condition, ok: true },
-                  { l: "Accidents", v: "None reported", ok: true },
-                  { l: "Service history", v: "Complete", ok: true },
+                  { l: "Overall", v: car.condition },
+                  { l: "Accidents", v: "None reported" },
+                  { l: "Service history", v: "Complete" },
                 ].map((r) => (
                   <div key={r.l} className="glass rounded-xl p-4">
                     <div className="text-xs text-muted-foreground uppercase tracking-wider">{r.l}</div>
@@ -166,7 +218,7 @@ function CarPage() {
             </div>
           </div>
 
-          {/* RIGHT: Bidding panel */}
+          {/* RIGHT: Bidding/Buy panel */}
           <div className="space-y-5 lg:sticky lg:top-20 h-fit">
             {car.isLive ? (
               <div className="rounded-2xl glass-strong border border-primary/30 p-6 shadow-elegant">
@@ -230,14 +282,57 @@ function CarPage() {
                 </div>
               </div>
             ) : (
-              <div className="rounded-2xl glass-strong p-6 shadow-elegant">
+              <div className="rounded-2xl glass-strong p-6 shadow-elegant space-y-3">
                 <div className="text-xs uppercase tracking-wider text-muted-foreground">Buy Now Price</div>
                 <div className="font-display text-4xl font-bold text-gradient-primary">{formatPrice(car.price)}</div>
-                <Button className="w-full mt-5 bg-gradient-primary border-0 text-primary-foreground h-12">Reserve this car</Button>
-                <Button variant="outline" className="w-full mt-2 glass">Contact dealer</Button>
+
+                {!showReserve ? (
+                  <Button
+                    onClick={() => setShowReserve(true)}
+                    className="w-full mt-2 bg-gradient-primary border-0 text-primary-foreground h-12"
+                  >
+                    Reserve this car
+                  </Button>
+                ) : (
+                  <div className="space-y-3 pt-2 border-t border-border/40">
+                    <p className="text-sm font-medium">Confirm reservation</p>
+                    <p className="text-xs text-muted-foreground">We'll contact you within 2 hours to complete your reservation for {car.title}.</p>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => { setShowReserve(false); toast.success("Reservation confirmed! We'll contact you shortly."); }}
+                        className="flex-1 bg-gradient-primary border-0 text-primary-foreground"
+                        size="sm"
+                      >
+                        Confirm
+                      </Button>
+                      <Button onClick={() => setShowReserve(false)} variant="outline" size="sm" className="glass">Cancel</Button>
+                    </div>
+                  </div>
+                )}
+
+                <Button
+                  variant="outline"
+                  className="w-full glass"
+                  onClick={() => setShowContact(!showContact)}
+                >
+                  <Phone className="h-4 w-4" /> Contact dealer
+                </Button>
+
+                {showContact && (
+                  <div className="rounded-xl glass border border-border/40 p-4 space-y-2 text-sm">
+                    <p className="font-medium">{car.dealership}</p>
+                    <a href="tel:+20212345678" className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-smooth">
+                      <Phone className="h-3.5 w-3.5" /> +20 2 1234 5678
+                    </a>
+                    <a href="mailto:info@apexauto.com" className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-smooth">
+                      <Mail className="h-3.5 w-3.5" /> info@apexauto.com
+                    </a>
+                  </div>
+                )}
               </div>
             )}
 
+            {/* Dealer card */}
             <div className="rounded-2xl bg-gradient-card border border-border/60 p-5">
               <div className="flex items-center gap-3">
                 <div className="h-11 w-11 rounded-full bg-gradient-primary flex items-center justify-center">
@@ -248,7 +343,13 @@ function CarPage() {
                   <div className="text-xs text-muted-foreground">Verified dealer · 4.9 ★ (218 reviews)</div>
                 </div>
               </div>
-              <Button variant="outline" className="w-full mt-4 glass">Chat with dealer</Button>
+              <Button
+                variant="outline"
+                className="w-full mt-4 glass gap-2"
+                onClick={() => setShowChat(true)}
+              >
+                <MessageCircle className="h-4 w-4" /> Chat with dealer
+              </Button>
             </div>
           </div>
         </div>
@@ -261,6 +362,51 @@ function CarPage() {
           </div>
         </div>
       </div>
+
+      {/* Chat modal */}
+      {showChat && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setShowChat(false)}>
+          <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" />
+          <div
+            className="relative w-full max-w-md glass-strong border border-border/60 rounded-2xl shadow-elegant flex flex-col"
+            style={{ maxHeight: "480px" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border/40">
+              <div>
+                <p className="font-display font-semibold text-sm">Chat with dealer</p>
+                <p className="text-xs text-muted-foreground">{car.dealership}</p>
+              </div>
+              <button onClick={() => setShowChat(false)} className="h-8 w-8 rounded-full glass flex items-center justify-center hover:bg-secondary/60 transition-smooth">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0" style={{ maxHeight: "280px" }}>
+              {chatHistory.map((m, i) => (
+                <div key={i} className={`flex ${m.from === "you" ? "justify-end" : "justify-start"}`}>
+                  <div className={`max-w-[80%] px-3 py-2 rounded-xl text-sm ${m.from === "you" ? "bg-gradient-primary text-primary-foreground" : "glass border border-border/40"}`}>
+                    {m.text}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <form onSubmit={sendChat} className="flex gap-2 p-4 border-t border-border/40">
+              <input
+                value={chatMsg}
+                onChange={(e) => setChatMsg(e.target.value)}
+                placeholder="Type a message…"
+                className="flex-1 bg-background/50 border border-border rounded-lg px-3 py-2 text-sm outline-none focus:border-primary"
+              />
+              <Button type="submit" size="sm" className="bg-gradient-primary border-0 text-primary-foreground px-4">
+                Send
+              </Button>
+            </form>
+          </div>
+        </div>
+      )}
+
       <Footer />
     </div>
   );

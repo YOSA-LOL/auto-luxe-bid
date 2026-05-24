@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { CarCard } from "@/components/CarCard";
@@ -16,15 +16,23 @@ export const Route = createFileRoute("/browse")({
       { name: "description", content: "Browse all verified used cars and live auctions." },
     ],
   }),
+  validateSearch: (search: Record<string, unknown>) => ({
+    q: (search.q as string) ?? "",
+  }),
   component: BrowsePage,
 });
 
 function BrowsePage() {
-  const [q, setQ] = useState("");
+  const { q: initialQ } = Route.useSearch();
+  const [q, setQ] = useState(initialQ ?? "");
   const [brand, setBrand] = useState("All Brands");
   const [city, setCity] = useState("All Cities");
   const [maxPrice, setMaxPrice] = useState(100_000_000);
   const [onlyLive, setOnlyLive] = useState(false);
+
+  useEffect(() => {
+    if (initialQ) setQ(initialQ);
+  }, [initialQ]);
 
   const filtered = useMemo(() => {
     return CARS.filter((c) => {

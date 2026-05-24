@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { CarCard } from "@/components/CarCard";
@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight, Gavel, ShieldCheck, Sparkles, Zap, Radio, TrendingUp, Search } from "lucide-react";
 import heroCar from "@/assets/hero-car.jpg";
+import { useState } from "react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -15,6 +17,13 @@ export const Route = createFileRoute("/")({
 function Index() {
   const live = liveAuctions();
   const featured = CARS.slice(0, 6);
+  const [searchQ, setSearchQ] = useState("");
+  const navigate = useNavigate();
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    navigate({ to: "/browse", search: { q: searchQ } });
+  };
 
   return (
     <div className="min-h-screen">
@@ -49,7 +58,7 @@ function Index() {
                   </Link>
                 </Button>
                 <Button asChild size="lg" variant="outline" className="glass h-12 px-6">
-                  <Link to="/browse">
+                  <Link to="/browse" search={{ q: "" }}>
                     Browse Cars <ArrowRight className="h-4 w-4" />
                   </Link>
                 </Button>
@@ -103,18 +112,20 @@ function Index() {
       {/* FLOATING SEARCH */}
       <section className="relative -mt-10 px-4 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-5xl glass-strong rounded-2xl p-3 shadow-elegant">
-          <div className="flex flex-col sm:flex-row gap-2">
+          <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2">
             <div className="flex-1 flex items-center gap-3 px-4 py-3 bg-background/40 rounded-xl">
               <Search className="h-4 w-4 text-muted-foreground" />
               <input
+                value={searchQ}
+                onChange={(e) => setSearchQ(e.target.value)}
                 placeholder="Try 'McLaren', 'SUV under 5M', 'live now'…"
                 className="flex-1 bg-transparent outline-none text-sm placeholder:text-muted-foreground"
               />
             </div>
-            <Button asChild size="lg" className="bg-gradient-primary border-0 text-primary-foreground h-12 px-8">
-              <Link to="/browse">Search</Link>
+            <Button type="submit" size="lg" className="bg-gradient-primary border-0 text-primary-foreground h-12 px-8">
+              Search
             </Button>
-          </div>
+          </form>
         </div>
       </section>
 
@@ -163,7 +174,7 @@ function Index() {
             <span className="text-xs uppercase tracking-[0.2em] text-primary-glow font-semibold">Curated</span>
             <h2 className="font-display text-3xl sm:text-4xl font-bold mt-2">Featured inventory</h2>
           </div>
-          <Button asChild variant="ghost"><Link to="/browse">All cars <ArrowRight className="h-4 w-4" /></Link></Button>
+          <Button asChild variant="ghost"><Link to="/browse" search={{ q: "" }}>All cars <ArrowRight className="h-4 w-4" /></Link></Button>
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {featured.map((c) => <CarCard key={c.id} car={c} />)}
@@ -182,8 +193,12 @@ function Index() {
               Reach {formatNumber(120000)}+ qualified buyers, get instant price discovery, and clear inventory faster than ever.
             </p>
             <div className="mt-6 flex gap-3">
-              <Button size="lg" className="bg-gradient-primary border-0 text-primary-foreground shadow-glow">Become a dealer</Button>
-              <Button size="lg" variant="outline" className="glass">Talk to sales</Button>
+              <Button asChild size="lg" className="bg-gradient-primary border-0 text-primary-foreground shadow-glow">
+                <Link to="/list-your-car">Become a dealer</Link>
+              </Button>
+              <Button size="lg" variant="outline" className="glass" onClick={() => toast.info("Our sales team: sales@apexauto.com · +20 2 1234 5678")}>
+                Talk to sales
+              </Button>
             </div>
           </div>
         </div>

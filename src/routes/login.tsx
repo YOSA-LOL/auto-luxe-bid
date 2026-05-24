@@ -3,6 +3,7 @@ import { getGoogleAuthUrl, getUser } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Gavel } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -79,9 +80,9 @@ function LoginPage() {
 
           <p className="mt-6 text-xs text-muted-foreground leading-relaxed">
             By signing in, you agree to our{" "}
-            <span className="underline underline-offset-2 cursor-pointer hover:text-foreground transition-smooth">Terms of Service</span>
+            <button onClick={() => toast.info("Terms of Service available at: apexauto.com/terms")} className="underline underline-offset-2 hover:text-foreground transition-smooth">Terms of Service</button>
             {" "}and{" "}
-            <span className="underline underline-offset-2 cursor-pointer hover:text-foreground transition-smooth">Privacy Policy</span>.
+            <button onClick={() => toast.info("Privacy Policy available at: apexauto.com/privacy")} className="underline underline-offset-2 hover:text-foreground transition-smooth">Privacy Policy</button>.
           </p>
         </div>
 

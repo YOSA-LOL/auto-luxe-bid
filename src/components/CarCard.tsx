@@ -2,9 +2,20 @@ import { Link } from "@tanstack/react-router";
 import { Car, formatPrice, formatNumber } from "@/lib/mock-data";
 import { Badge } from "@/components/ui/badge";
 import { Heart, MapPin, Gauge, Fuel, CircleCheck, Radio } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 
 export function CarCard({ car }: { car: Car }) {
   const live = car.isLive;
+  const [liked, setLiked] = useState(false);
+
+  const handleHeart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setLiked((v) => !v);
+    toast.success(liked ? "Removed from favorites" : "Added to favorites ♥");
+  };
+
   return (
     <Link
       to="/cars/$carId"
@@ -35,8 +46,11 @@ export function CarCard({ car }: { car: Car }) {
           )}
         </div>
 
-        <button className="absolute top-3 right-3 h-9 w-9 rounded-full glass flex items-center justify-center hover:bg-secondary transition-smooth">
-          <Heart className="h-4 w-4" />
+        <button
+          onClick={handleHeart}
+          className={`absolute top-3 right-3 h-9 w-9 rounded-full glass flex items-center justify-center hover:bg-secondary transition-smooth ${liked ? "text-red-500" : ""}`}
+        >
+          <Heart className={`h-4 w-4 ${liked ? "fill-current" : ""}`} />
         </button>
 
         <div className="absolute bottom-3 left-3 right-3">

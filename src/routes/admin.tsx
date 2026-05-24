@@ -1,10 +1,15 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { CARS, formatPrice, formatNumber, liveAuctions } from "@/lib/mock-data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Users, Car as CarIcon, Gavel, DollarSign, TrendingUp, ShieldCheck, Activity, MoreHorizontal } from "lucide-react";
+import {
+  Users, Car as CarIcon, Gavel, DollarSign, TrendingUp,
+  ShieldCheck, Activity, MoreHorizontal, Download, Plus, X,
+} from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -15,6 +20,7 @@ export const Route = createFileRoute("/admin")({
 
 function AdminPage() {
   const live = liveAuctions();
+  const [showCarMenu, setShowCarMenu] = useState<string | null>(null);
   const stats = [
     { icon: DollarSign, l: "Revenue (30d)", v: "EGP 12.4M", d: "+18.2%" },
     { icon: Gavel, l: "Active Auctions", v: live.length.toString(), d: "+4 today" },
@@ -24,8 +30,32 @@ function AdminPage() {
 
   const bars = [42, 58, 71, 49, 88, 95, 76, 102, 89, 124, 110, 138];
 
+  const handleExport = () => {
+    const rows = [
+      ["Title", "Brand", "Year", "Status", "Price", "Dealership", "City"],
+      ...CARS.map((c) => [
+        c.title,
+        c.brand,
+        c.year,
+        c.isLive ? "Live" : "Listed",
+        c.isLive ? c.currentBid : c.price,
+        c.dealership,
+        c.city,
+      ]),
+    ];
+    const csv = rows.map((r) => r.join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "apexauto-report.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Report exported as CSV");
+  };
+
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen" onClick={() => setShowCarMenu(null)}>
       <Header />
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
         <div className="flex items-center justify-between flex-wrap gap-3 mb-8">
@@ -37,8 +67,14 @@ function AdminPage() {
             <h1 className="font-display text-4xl font-bold mt-1">Control <span className="text-gradient-primary">Center</span></h1>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" className="glass">Export report</Button>
-            <Button className="bg-gradient-primary border-0 text-primary-foreground">New auction</Button>
+            <Button variant="outline" className="glass gap-2" onClick={handleExport}>
+              <Download className="h-4 w-4" /> Export report
+            </Button>
+            <Button asChild className="bg-gradient-primary border-0 text-primary-foreground gap-2">
+              <Link to="/list-your-car">
+                <Plus className="h-4 w-4" /> New auction
+              </Link>
+            </Button>
           </div>
         </div>
 
@@ -58,7 +94,7 @@ function AdminPage() {
           ))}
         </div>
 
-        {/* Chart + Live monitoring */}
+        {/* Chart + Live */}
         <div className="grid lg:grid-cols-3 gap-5 mt-5">
           <div className="lg:col-span-2 rounded-2xl bg-gradient-card border border-border/60 p-6">
             <div className="flex items-center justify-between mb-6">
@@ -70,8 +106,11 @@ function AdminPage() {
             </div>
             <div className="flex items-end gap-2 h-48">
               {bars.map((b, i) => (
-                <div key={i} className="flex-1 rounded-t-md bg-gradient-primary opacity-80 hover:opacity-100 transition-smooth"
-                     style={{ height: `${(b / Math.max(...bars)) * 100}%`, boxShadow: "var(--shadow-glow)" }}
+                <div
+                  key={i}
+                  className="flex-1 rounded-t-md bg-gradient-primary opacity-80 hover:opacity-100 transition-smooth cursor-pointer"
+                  style={{ height: `${(b / Math.max(...bars)) * 100}%`, boxShadow: "var(--shadow-glow)" }}
+                  onClick={() => toast.info(`Week ${i + 1}: EGP ${(b * 100_000).toLocaleString()}`)}
                 />
               ))}
             </div>
@@ -84,7 +123,12 @@ function AdminPage() {
             </div>
             <div className="space-y-3">
               {live.slice(0, 4).map((c) => (
-                <div key={c.id} className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
+                <Link
+                  key={c.id}
+                  to="/cars/$carId"
+                  params={{ carId: c.id }}
+                  className="flex items-center justify-between py-2 border-b border-border/30 last:border-0 hover:opacity-80 transition-smooth"
+                >
                   <div>
                     <div className="text-sm font-medium">{c.title}</div>
                     <div className="text-[11px] text-muted-foreground">{c.bids} bids · {c.viewers} viewing</div>
@@ -92,7 +136,7 @@ function AdminPage() {
                   <div className="text-right">
                     <div className="font-display font-semibold text-sm text-gradient-primary">{formatPrice(c.currentBid!)}</div>
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           </div>
@@ -103,7 +147,9 @@ function AdminPage() {
           <div className="rounded-2xl bg-gradient-card border border-border/60 p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-display font-semibold">Recent cars</h3>
-              <Button variant="ghost" size="sm">Manage all</Button>
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/browse" search={{ q: "" }}>Manage all</Link>
+              </Button>
             </div>
             <table className="w-full text-sm">
               <thead>
@@ -118,16 +164,51 @@ function AdminPage() {
                 {CARS.slice(0, 5).map((c) => (
                   <tr key={c.id} className="border-t border-border/30">
                     <td className="py-3">
-                      <div className="font-medium">{c.title}</div>
-                      <div className="text-[11px] text-muted-foreground">{c.dealership}</div>
+                      <Link to="/cars/$carId" params={{ carId: c.id }} className="hover:opacity-80 transition-smooth">
+                        <div className="font-medium">{c.title}</div>
+                        <div className="text-[11px] text-muted-foreground">{c.dealership}</div>
+                      </Link>
                     </td>
                     <td className="py-3">
                       {c.isLive
                         ? <Badge className="bg-[var(--live)] text-white border-0">Live</Badge>
                         : <Badge variant="outline">Listed</Badge>}
                     </td>
-                    <td className="py-3 text-right font-display font-semibold tabular-nums">{formatPrice(c.isLive ? c.currentBid! : c.price)}</td>
-                    <td className="py-3 text-right"><Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button></td>
+                    <td className="py-3 text-right font-display font-semibold tabular-nums">
+                      {formatPrice(c.isLive ? c.currentBid! : c.price)}
+                    </td>
+                    <td className="py-3 text-right relative" onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowCarMenu(showCarMenu === c.id ? null : c.id)}
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                      {showCarMenu === c.id && (
+                        <div className="absolute right-0 top-full mt-1 w-36 glass-strong border border-border/60 rounded-xl shadow-elegant z-10 overflow-hidden">
+                          <Link
+                            to="/cars/$carId"
+                            params={{ carId: c.id }}
+                            className="block px-3 py-2 text-sm hover:bg-secondary/60 transition-smooth"
+                          >
+                            View listing
+                          </Link>
+                          <button
+                            className="block w-full text-left px-3 py-2 text-sm hover:bg-secondary/60 transition-smooth"
+                            onClick={() => { setShowCarMenu(null); toast.success(`${c.title} marked as featured`); }}
+                          >
+                            Mark featured
+                          </button>
+                          <button
+                            className="block w-full text-left px-3 py-2 text-sm hover:bg-destructive/10 text-destructive transition-smooth"
+                            onClick={() => { setShowCarMenu(null); toast.info(`${c.title} removed from listing`); }}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -137,7 +218,9 @@ function AdminPage() {
           <div className="rounded-2xl bg-gradient-card border border-border/60 p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-display font-semibold">Top dealerships</h3>
-              <Button variant="ghost" size="sm">View all</Button>
+              <Button variant="ghost" size="sm" onClick={() => toast.info("Full dealerships directory coming soon")}>
+                View all
+              </Button>
             </div>
             <div className="space-y-3">
               {[
@@ -147,8 +230,12 @@ function AdminPage() {
                 { n: "Velocity Garage", s: "EGP 2.1M", c: 31 },
                 { n: "Heritage Collection", s: "EGP 1.6M", c: 14 },
               ].map((d, i) => (
-                <div key={d.n} className="flex items-center gap-3 py-2">
-                  <div className="h-9 w-9 rounded-lg bg-gradient-primary flex items-center justify-center font-display text-sm font-bold text-primary-foreground">
+                <button
+                  key={d.n}
+                  className="flex items-center gap-3 py-2 w-full text-left hover:opacity-80 transition-smooth"
+                  onClick={() => toast.info(`${d.n}: ${d.c} cars sold · ${d.s} revenue`)}
+                >
+                  <div className="h-9 w-9 rounded-lg bg-gradient-primary flex items-center justify-center font-display text-sm font-bold text-primary-foreground shrink-0">
                     {i + 1}
                   </div>
                   <div className="flex-1">
@@ -156,7 +243,7 @@ function AdminPage() {
                     <div className="text-[11px] text-muted-foreground">{d.c} cars sold</div>
                   </div>
                   <div className="font-display font-semibold text-sm text-gradient-primary">{d.s}</div>
-                </div>
+                </button>
               ))}
             </div>
           </div>

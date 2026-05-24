@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getCookie, setCookie, deleteCookie, getWebRequest } from "vinxi/http";
+import { getCookie, setCookie, deleteCookie, getRequest } from "@tanstack/react-start/server";
 import { redirect } from "@tanstack/react-router";
 
 const SESSION_COOKIE = "apex_session";
@@ -68,7 +68,7 @@ export const getUser = createServerFn({ method: "GET" }).handler(async () => {
 });
 
 export const getGoogleAuthUrl = createServerFn({ method: "GET" }).handler(async () => {
-  const request = getWebRequest();
+  const request = getRequest();
   const origin = new URL(request.url).origin;
   const redirectUri = `${origin}/auth/callback`;
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -95,15 +95,14 @@ export const getGoogleAuthUrl = createServerFn({ method: "GET" }).handler(async 
 });
 
 export const handleGoogleCallback = createServerFn({ method: "GET" })
-  .validator((data: unknown) => data as { code: string; state: string })
-  .handler(async ({ data }) => {
-    const { code, state } = data;
+  .handler(async (ctx: { data: { code: string; state: string } }) => {
+    const { code, state } = ctx.data;
     const savedState = getCookie(STATE_COOKIE);
     if (!savedState || state !== savedState) {
       throw redirect({ to: "/login" });
     }
 
-    const request = getWebRequest();
+    const request = getRequest();
     const origin = new URL(request.url).origin;
     const redirectUri = `${origin}/auth/callback`;
 
