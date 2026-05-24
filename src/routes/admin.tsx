@@ -1,10 +1,11 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { CARS, formatPrice, formatNumber, liveAuctions } from "@/lib/mock-data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Users, Car as CarIcon, Gavel, DollarSign, TrendingUp, ShieldCheck, Activity, MoreHorizontal } from "lucide-react";
+import { Users, Car as CarIcon, Gavel, DollarSign, TrendingUp, ShieldCheck, Activity, MoreHorizontal, Download, Plus } from "lucide-react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -24,6 +25,31 @@ function AdminPage() {
 
   const bars = [42, 58, 71, 49, 88, 95, 76, 102, 89, 124, 110, 138];
 
+  const handleExport = () => {
+    const rows = [
+      ["Car", "Status", "Price", "Dealer"],
+      ...CARS.map((c) => [
+        c.title,
+        c.isLive ? "Live" : "Listed",
+        formatPrice(c.isLive ? c.currentBid! : c.price),
+        c.dealership,
+      ]),
+    ];
+    const csv = rows.map((r) => r.join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "apexauto-report.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Report exported as CSV!");
+  };
+
+  const handleNewAuction = () => {
+    toast.info("New auction creation panel coming soon!");
+  };
+
   return (
     <div className="min-h-screen">
       <Header />
@@ -37,8 +63,12 @@ function AdminPage() {
             <h1 className="font-display text-4xl font-bold mt-1">Control <span className="text-gradient-primary">Center</span></h1>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" className="glass">Export report</Button>
-            <Button className="bg-gradient-primary border-0 text-primary-foreground">New auction</Button>
+            <Button onClick={handleExport} variant="outline" className="glass gap-2">
+              <Download className="h-4 w-4" /> Export report
+            </Button>
+            <Button onClick={handleNewAuction} className="bg-gradient-primary border-0 text-primary-foreground gap-2">
+              <Plus className="h-4 w-4" /> New auction
+            </Button>
           </div>
         </div>
 
@@ -70,8 +100,11 @@ function AdminPage() {
             </div>
             <div className="flex items-end gap-2 h-48">
               {bars.map((b, i) => (
-                <div key={i} className="flex-1 rounded-t-md bg-gradient-primary opacity-80 hover:opacity-100 transition-smooth"
-                     style={{ height: `${(b / Math.max(...bars)) * 100}%`, boxShadow: "var(--shadow-glow)" }}
+                <div
+                  key={i}
+                  className="flex-1 rounded-t-md bg-gradient-primary opacity-80 hover:opacity-100 transition-smooth cursor-pointer"
+                  style={{ height: `${(b / Math.max(...bars)) * 100}%`, boxShadow: "var(--shadow-glow)" }}
+                  onClick={() => toast.info(`Week ${i + 1}: EGP ${b * 100_000} revenue`)}
                 />
               ))}
             </div>
@@ -84,7 +117,12 @@ function AdminPage() {
             </div>
             <div className="space-y-3">
               {live.slice(0, 4).map((c) => (
-                <div key={c.id} className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
+                <Link
+                  key={c.id}
+                  to="/cars/$carId"
+                  params={{ carId: c.id }}
+                  className="flex items-center justify-between py-2 border-b border-border/30 last:border-0 hover:opacity-80 transition-smooth"
+                >
                   <div>
                     <div className="text-sm font-medium">{c.title}</div>
                     <div className="text-[11px] text-muted-foreground">{c.bids} bids · {c.viewers} viewing</div>
@@ -92,7 +130,7 @@ function AdminPage() {
                   <div className="text-right">
                     <div className="font-display font-semibold text-sm text-gradient-primary">{formatPrice(c.currentBid!)}</div>
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           </div>
@@ -103,7 +141,9 @@ function AdminPage() {
           <div className="rounded-2xl bg-gradient-card border border-border/60 p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-display font-semibold">Recent cars</h3>
-              <Button variant="ghost" size="sm">Manage all</Button>
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/browse">Manage all</Link>
+              </Button>
             </div>
             <table className="w-full text-sm">
               <thead>
@@ -127,7 +167,13 @@ function AdminPage() {
                         : <Badge variant="outline">Listed</Badge>}
                     </td>
                     <td className="py-3 text-right font-display font-semibold tabular-nums">{formatPrice(c.isLive ? c.currentBid! : c.price)}</td>
-                    <td className="py-3 text-right"><Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button></td>
+                    <td className="py-3 text-right">
+                      <Link to="/cars/$carId" params={{ carId: c.id }}>
+                        <Button variant="ghost" size="icon">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -137,7 +183,9 @@ function AdminPage() {
           <div className="rounded-2xl bg-gradient-card border border-border/60 p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-display font-semibold">Top dealerships</h3>
-              <Button variant="ghost" size="sm">View all</Button>
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/browse">View all</Link>
+              </Button>
             </div>
             <div className="space-y-3">
               {[
