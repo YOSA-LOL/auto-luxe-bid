@@ -1,9 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getCookie, setCookie, deleteCookie, getRequest } from "@tanstack/react-start/server";
+import { getCookie, setCookie, deleteCookie } from "@tanstack/react-start/server";
 import { redirect } from "@tanstack/react-router";
 
 const SESSION_COOKIE = "apex_session";
-const STATE_COOKIE = "oauth_state";
 
 async function hmacSign(data: string, secret: string): Promise<string> {
   const key = await crypto.subtle.importKey(
@@ -41,8 +40,7 @@ async function getSessionFromCookie(): Promise<SessionUser | null> {
     if (dotIndex === -1) return null;
     const data = cookie.slice(0, dotIndex);
     const sig = cookie.slice(dotIndex + 1);
-    const secret = process.env.SESSION_SECRET;
-    if (!secret) return null;
+    const secret = process.env.SESSION_SECRET ?? "dev-secret";
     if (!(await hmacVerify(data, sig, secret))) return null;
     return JSON.parse(atob(data)) as SessionUser;
   } catch {
@@ -52,11 +50,11 @@ async function getSessionFromCookie(): Promise<SessionUser | null> {
 
 async function writeSession(user: SessionUser): Promise<void> {
   const data = btoa(JSON.stringify(user));
-  const secret = process.env.SESSION_SECRET!;
+  const secret = process.env.SESSION_SECRET ?? "dev-secret";
   const sig = await hmacSign(data, secret);
   setCookie(SESSION_COOKIE, `${data}.${sig}`, {
     httpOnly: true,
-    secure: true,
+    secure: false,
     sameSite: "lax",
     maxAge: 60 * 60 * 24 * 30,
     path: "/",
@@ -67,13 +65,24 @@ export const getUser = createServerFn({ method: "GET" }).handler(async () => {
   return getSessionFromCookie();
 });
 
-export const getGoogleAuthUrl = createServerFn({ method: "GET" }).handler(async () => {
-  const request = getRequest();
-  const origin = new URL(request.url).origin;
-  const redirectUri = `${origin}/auth/callback`;
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  if (!clientId) throw new Error("GOOGLE_CLIENT_ID not configured");
+// Mock login — signs in a demo user without needing Google OAuth
+export const mockSignIn = createServerFn({ method: "POST" }).handler(async () => {
+  await writeSession({
+    id: "mock-user-001",
+    email: "demo@apexauto.com",
+    name: "Demo User",
+    picture: "",
+  });
+  throw redirect({ to: "/" });
+});
 
+export const getGoogleAuthUrl = createServerFn({ method: "GET" }).handler(async () => {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  if (!clientId) {
+    throw new Error("GOOGLE_CLIENT_ID not configured");
+  }
+
+  const STATE_COOKIE = "oauth_state";
   const state = crypto.randomUUID();
   setCookie(STATE_COOKIE, state, {
     httpOnly: true,
@@ -84,7 +93,7 @@ export const getGoogleAuthUrl = createServerFn({ method: "GET" }).handler(async 
 
   const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   url.searchParams.set("client_id", clientId);
-  url.searchParams.set("redirect_uri", redirectUri);
+  url.searchParams.set("redirect_uri", `${process.env.ORIGIN ?? ""}/auth/callback`);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", "openid email profile");
   url.searchParams.set("state", state);
@@ -96,14 +105,14 @@ export const getGoogleAuthUrl = createServerFn({ method: "GET" }).handler(async 
 
 export const handleGoogleCallback = createServerFn({ method: "GET" })
   .handler(async (ctx: { data: { code: string; state: string } }) => {
+    const STATE_COOKIE = "oauth_state";
     const { code, state } = ctx.data;
     const savedState = getCookie(STATE_COOKIE);
     if (!savedState || state !== savedState) {
       throw redirect({ to: "/login" });
     }
 
-    const request = getRequest();
-    const origin = new URL(request.url).origin;
+    const origin = process.env.ORIGIN ?? "";
     const redirectUri = `${origin}/auth/callback`;
 
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
@@ -127,10 +136,7 @@ export const handleGoogleCallback = createServerFn({ method: "GET" })
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     });
     const userInfo = (await userRes.json()) as {
-      id: string;
-      email: string;
-      name: string;
-      picture: string;
+      id: string; email: string; name: string; picture: string;
     };
 
     await writeSession({
@@ -140,7 +146,6 @@ export const handleGoogleCallback = createServerFn({ method: "GET" })
       picture: userInfo.picture,
     });
     deleteCookie(STATE_COOKIE);
-
     throw redirect({ to: "/" });
   });
 
