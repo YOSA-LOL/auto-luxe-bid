@@ -1,8 +1,38 @@
-import { Link } from "@tanstack/react-router";
-import { Gavel, Search, User, Heart, Menu } from "lucide-react";
+import { Link, useRouter } from "@tanstack/react-router";
+import { Gavel, Search, User, Heart, Menu, LogOut, ChevronDown, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { signOut } from "@/lib/auth";
+import { Route as RootRoute } from "@/routes/__root";
+import { useState, useRef, useEffect } from "react";
+import { toast } from "sonner";
 
 export function Header() {
+  const { user } = RootRoute.useRouteContext();
+  const router = useRouter();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const handleSignOut = async () => {
+    setMenuOpen(false);
+    await signOut();
+    router.invalidate();
+  };
+
+  const handleFavorites = () => {
+    toast.info("Favorites coming soon!");
+  };
+
   return (
     <header className="sticky top-0 z-50 w-full">
       <div className="glass-strong border-b border-border/40">
@@ -34,23 +64,113 @@ export function Header() {
           </nav>
 
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="hidden sm:inline-flex">
-              <Search className="h-4 w-4" />
+            <Button asChild variant="ghost" size="icon" className="hidden sm:inline-flex">
+              <Link to="/browse">
+                <Search className="h-4 w-4" />
+              </Link>
             </Button>
-            <Button variant="ghost" size="icon" className="hidden sm:inline-flex">
+
+            <Button variant="ghost" size="icon" className="hidden sm:inline-flex" onClick={handleFavorites}>
               <Heart className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon">
-              <User className="h-4 w-4" />
+
+            {user ? (
+              <div className="relative" ref={menuRef}>
+                <button
+                  onClick={() => setMenuOpen(!menuOpen)}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl glass border border-border/40 hover:border-primary/40 transition-smooth"
+                >
+                  {user.picture ? (
+                    <img src={user.picture} alt={user.name} className="h-7 w-7 rounded-full object-cover" />
+                  ) : (
+                    <div className="h-7 w-7 rounded-full bg-gradient-primary flex items-center justify-center">
+                      <User className="h-3.5 w-3.5 text-primary-foreground" />
+                    </div>
+                  )}
+                  <span className="hidden sm:block text-sm font-medium max-w-[120px] truncate">{user.name.split(" ")[0]}</span>
+                  <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-smooth ${menuOpen ? "rotate-180" : ""}`} />
+                </button>
+
+                {menuOpen && (
+                  <div className="absolute right-0 mt-2 w-56 glass-strong border border-border/60 rounded-xl shadow-elegant overflow-hidden z-50 animate-fade-up">
+                    <div className="px-4 py-3 border-b border-border/40">
+                      <p className="text-sm font-medium truncate">{user.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                    </div>
+                    <div className="p-1">
+                      <Link
+                        to="/list-your-car"
+                        className="flex items-center gap-2 w-full px-3 py-2 text-sm rounded-lg hover:bg-secondary/60 transition-smooth"
+                        onClick={() => setMenuOpen(false)}
+                      >
+                        <Gavel className="h-4 w-4 text-muted-foreground" />
+                        List Your Car
+                      </Link>
+                      <Link
+                        to="/admin"
+                        className="flex items-center gap-2 w-full px-3 py-2 text-sm rounded-lg hover:bg-secondary/60 transition-smooth"
+                        onClick={() => setMenuOpen(false)}
+                      >
+                        <Shield className="h-4 w-4 text-muted-foreground" />
+                        Admin Panel
+                      </Link>
+                      <button
+                        onClick={handleSignOut}
+                        className="flex items-center gap-2 w-full px-3 py-2 text-sm rounded-lg hover:bg-destructive/10 text-destructive transition-smooth"
+                      >
+                        <LogOut className="h-4 w-4" />
+                        Sign Out
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <Button asChild variant="ghost" size="icon">
+                <Link to="/login">
+                  <User className="h-4 w-4" />
+                </Link>
+              </Button>
+            )}
+
+            <Button asChild className="hidden sm:inline-flex bg-gradient-primary shadow-glow border-0 text-primary-foreground hover:opacity-90">
+              <Link to="/list-your-car">List Your Car</Link>
             </Button>
-            <Button className="hidden sm:inline-flex bg-gradient-primary shadow-glow border-0 text-primary-foreground hover:opacity-90">
-              List Your Car
-            </Button>
-            <Button variant="ghost" size="icon" className="md:hidden">
+
+            <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setMobileOpen(!mobileOpen)}>
               <Menu className="h-4 w-4" />
             </Button>
           </div>
         </div>
+
+        {/* Mobile nav */}
+        {mobileOpen && (
+          <div className="md:hidden border-t border-border/40 px-4 py-3 space-y-1">
+            {[
+              { to: "/browse", label: "Browse" },
+              { to: "/auctions", label: "Live Auctions" },
+              { to: "/admin", label: "Admin" },
+              { to: "/list-your-car", label: "List Your Car" },
+            ].map((l) => (
+              <Link
+                key={l.to}
+                to={l.to}
+                className="block px-3 py-2 text-sm rounded-lg hover:bg-secondary/50 transition-smooth"
+                onClick={() => setMobileOpen(false)}
+              >
+                {l.label}
+              </Link>
+            ))}
+            {user && (
+              <button
+                onClick={handleSignOut}
+                className="block w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-destructive/10 text-destructive transition-smooth"
+              >
+                Sign Out
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </header>
   );
