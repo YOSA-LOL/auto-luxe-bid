@@ -9,25 +9,12 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as ListYourCarRouteImport } from './routes/list-your-car'
 import { Route as BrowseRouteImport } from './routes/browse'
 import { Route as AuctionsRouteImport } from './routes/auctions'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CarsCarIdRouteImport } from './routes/cars.$carId'
-import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ListYourCarRoute = ListYourCarRouteImport.update({
-  id: '/list-your-car',
-  path: '/list-your-car',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const BrowseRoute = BrowseRouteImport.update({
   id: '/browse',
   path: '/browse',
@@ -53,20 +40,12 @@ const CarsCarIdRoute = CarsCarIdRouteImport.update({
   path: '/cars/$carId',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthCallbackRoute = AuthCallbackRouteImport.update({
-  id: '/auth/callback',
-  path: '/auth/callback',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/auctions': typeof AuctionsRoute
   '/browse': typeof BrowseRoute
-  '/list-your-car': typeof ListYourCarRoute
-  '/login': typeof LoginRoute
-  '/auth/callback': typeof AuthCallbackRoute
   '/cars/$carId': typeof CarsCarIdRoute
 }
 export interface FileRoutesByTo {
@@ -74,9 +53,6 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRoute
   '/auctions': typeof AuctionsRoute
   '/browse': typeof BrowseRoute
-  '/list-your-car': typeof ListYourCarRoute
-  '/login': typeof LoginRoute
-  '/auth/callback': typeof AuthCallbackRoute
   '/cars/$carId': typeof CarsCarIdRoute
 }
 export interface FileRoutesById {
@@ -85,42 +61,14 @@ export interface FileRoutesById {
   '/admin': typeof AdminRoute
   '/auctions': typeof AuctionsRoute
   '/browse': typeof BrowseRoute
-  '/list-your-car': typeof ListYourCarRoute
-  '/login': typeof LoginRoute
-  '/auth/callback': typeof AuthCallbackRoute
   '/cars/$carId': typeof CarsCarIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | '/admin'
-    | '/auctions'
-    | '/browse'
-    | '/list-your-car'
-    | '/login'
-    | '/auth/callback'
-    | '/cars/$carId'
+  fullPaths: '/' | '/admin' | '/auctions' | '/browse' | '/cars/$carId'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/admin'
-    | '/auctions'
-    | '/browse'
-    | '/list-your-car'
-    | '/login'
-    | '/auth/callback'
-    | '/cars/$carId'
-  id:
-    | '__root__'
-    | '/'
-    | '/admin'
-    | '/auctions'
-    | '/browse'
-    | '/list-your-car'
-    | '/login'
-    | '/auth/callback'
-    | '/cars/$carId'
+  to: '/' | '/admin' | '/auctions' | '/browse' | '/cars/$carId'
+  id: '__root__' | '/' | '/admin' | '/auctions' | '/browse' | '/cars/$carId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -128,28 +76,11 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRoute
   AuctionsRoute: typeof AuctionsRoute
   BrowseRoute: typeof BrowseRoute
-  ListYourCarRoute: typeof ListYourCarRoute
-  LoginRoute: typeof LoginRoute
-  AuthCallbackRoute: typeof AuthCallbackRoute
   CarsCarIdRoute: typeof CarsCarIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/list-your-car': {
-      id: '/list-your-car'
-      path: '/list-your-car'
-      fullPath: '/list-your-car'
-      preLoaderRoute: typeof ListYourCarRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/browse': {
       id: '/browse'
       path: '/browse'
@@ -185,13 +116,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CarsCarIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/auth/callback': {
-      id: '/auth/callback'
-      path: '/auth/callback'
-      fullPath: '/auth/callback'
-      preLoaderRoute: typeof AuthCallbackRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -200,9 +124,6 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRoute,
   AuctionsRoute: AuctionsRoute,
   BrowseRoute: BrowseRoute,
-  ListYourCarRoute: ListYourCarRoute,
-  LoginRoute: LoginRoute,
-  AuthCallbackRoute: AuthCallbackRoute,
   CarsCarIdRoute: CarsCarIdRoute,
 }
 export const routeTree = rootRouteImport

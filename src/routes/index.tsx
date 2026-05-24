@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { CarCard } from "@/components/CarCard";
@@ -7,8 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight, Gavel, ShieldCheck, Sparkles, Zap, Radio, TrendingUp, Search } from "lucide-react";
 import heroCar from "@/assets/hero-car.jpg";
-import { useState } from "react";
-import { toast } from "sonner";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -17,16 +15,6 @@ export const Route = createFileRoute("/")({
 function Index() {
   const live = liveAuctions();
   const featured = CARS.slice(0, 6);
-  const [searchQuery, setSearchQuery] = useState("");
-  const navigate = useNavigate();
-
-  const handleSearch = () => {
-    if (searchQuery.trim()) {
-      navigate({ to: "/browse", search: { q: searchQuery.trim() } as never });
-    } else {
-      navigate({ to: "/browse" });
-    }
-  };
 
   return (
     <div className="min-h-screen">
@@ -119,19 +107,12 @@ function Index() {
             <div className="flex-1 flex items-center gap-3 px-4 py-3 bg-background/40 rounded-xl">
               <Search className="h-4 w-4 text-muted-foreground" />
               <input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
                 placeholder="Try 'McLaren', 'SUV under 5M', 'live now'…"
                 className="flex-1 bg-transparent outline-none text-sm placeholder:text-muted-foreground"
               />
             </div>
-            <Button
-              onClick={handleSearch}
-              size="lg"
-              className="bg-gradient-primary border-0 text-primary-foreground h-12 px-8"
-            >
-              Search
+            <Button asChild size="lg" className="bg-gradient-primary border-0 text-primary-foreground h-12 px-8">
+              <Link to="/browse">Search</Link>
             </Button>
           </div>
         </div>
@@ -200,18 +181,9 @@ function Index() {
             <p className="mt-4 text-muted-foreground text-lg">
               Reach {formatNumber(120000)}+ qualified buyers, get instant price discovery, and clear inventory faster than ever.
             </p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Button asChild size="lg" className="bg-gradient-primary border-0 text-primary-foreground shadow-glow">
-                <Link to="/list-your-car">Become a dealer</Link>
-              </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                className="glass"
-                onClick={() => toast.info("Our sales team will contact you at: sales@apexauto.com")}
-              >
-                Talk to sales
-              </Button>
+            <div className="mt-6 flex gap-3">
+              <Button size="lg" className="bg-gradient-primary border-0 text-primary-foreground shadow-glow">Become a dealer</Button>
+              <Button size="lg" variant="outline" className="glass">Talk to sales</Button>
             </div>
           </div>
         </div>

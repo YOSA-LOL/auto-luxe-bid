@@ -45,9 +45,8 @@ function CarPage() {
     car.isLive ? seedBids(car.currentBid!, car.minRaise!) : []
   );
   const [viewers, setViewers] = useState(car.viewers ?? 0);
-  const [liked, setLiked] = useState(false);
-  const [activeThumb, setActiveThumb] = useState(0);
 
+  // simulate other people bidding
   useEffect(() => {
     if (!car.isLive) return;
     const t = setInterval(() => {
@@ -69,37 +68,6 @@ function CarPage() {
     toast.success(`Bid placed: ${formatPrice(amount)}`);
   };
 
-  const handleLike = () => {
-    setLiked(!liked);
-    toast.success(liked ? "Removed from favorites" : "Added to favorites!");
-  };
-
-  const handleShare = () => {
-    if (navigator.share) {
-      navigator.share({ title: car.title, url: window.location.href }).catch(() => {});
-    } else {
-      navigator.clipboard.writeText(window.location.href);
-      toast.success("Link copied to clipboard!");
-    }
-  };
-
-  const handleFlag = () => {
-    toast.info("Report submitted. Our team will review this listing.");
-  };
-
-  const handleReserve = () => {
-    toast.success(`Reservation request sent for ${car.title}! We'll contact you within 24 hours.`);
-  };
-
-  const handleContactDealer = () => {
-    toast.info(`Contact ${car.dealership} at: dealer@apexauto.com`);
-  };
-
-  const handleChat = () => {
-    toast.info(`Live chat with ${car.dealership} coming soon!`);
-  };
-
-  const thumbImages = CARS.slice(0, 4);
   const related = CARS.filter((c) => c.id !== car.id).slice(0, 3);
 
   return (
@@ -118,13 +86,7 @@ function CarPage() {
           {/* LEFT: Gallery + details */}
           <div className="space-y-6">
             <div className="relative rounded-3xl overflow-hidden border border-border/60 shadow-elegant">
-              <img
-                src={thumbImages[activeThumb]?.image ?? car.image}
-                alt={car.title}
-                width={1280}
-                height={896}
-                className="w-full h-auto transition-smooth"
-              />
+              <img src={car.image} alt={car.title} width={1280} height={896} className="w-full h-auto" />
               <div className="absolute top-4 left-4 flex gap-2">
                 {car.isLive && (
                   <Badge className="bg-[var(--live)] text-white border-0 animate-pulse-live gap-1">
@@ -136,39 +98,18 @@ function CarPage() {
                 </Badge>
               </div>
               <div className="absolute top-4 right-4 flex gap-2">
-                <button
-                  onClick={handleLike}
-                  className={`h-10 w-10 rounded-full glass flex items-center justify-center transition-smooth ${liked ? "text-red-500" : ""}`}
-                >
-                  <Heart className={`h-4 w-4 ${liked ? "fill-current" : ""}`} />
-                </button>
-                <button
-                  onClick={handleShare}
-                  className="h-10 w-10 rounded-full glass flex items-center justify-center hover:bg-white/10 transition-smooth"
-                >
-                  <Share2 className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={handleFlag}
-                  className="h-10 w-10 rounded-full glass flex items-center justify-center hover:bg-white/10 transition-smooth"
-                >
-                  <Flag className="h-4 w-4" />
-                </button>
+                <button className="h-10 w-10 rounded-full glass flex items-center justify-center"><Heart className="h-4 w-4" /></button>
+                <button className="h-10 w-10 rounded-full glass flex items-center justify-center"><Share2 className="h-4 w-4" /></button>
+                <button className="h-10 w-10 rounded-full glass flex items-center justify-center"><Flag className="h-4 w-4" /></button>
               </div>
             </div>
 
-            {/* Thumbnails */}
+            {/* Thumbnails (mock) */}
             <div className="grid grid-cols-4 gap-3">
-              {thumbImages.map((c, i) => (
-                <button
-                  key={c.id}
-                  onClick={() => setActiveThumb(i)}
-                  className={`aspect-[16/11] rounded-xl overflow-hidden border transition-smooth ${
-                    activeThumb === i ? "border-primary/60 ring-1 ring-primary/40" : "border-border/40 hover:border-primary/40"
-                  }`}
-                >
+              {CARS.slice(0, 4).map((c) => (
+                <div key={c.id} className="aspect-[16/11] rounded-xl overflow-hidden border border-border/40 cursor-pointer hover:border-primary/60 transition-smooth">
                   <img src={c.image} alt="" loading="lazy" width={400} height={275} className="h-full w-full object-cover" />
-                </button>
+                </div>
               ))}
             </div>
 
@@ -292,19 +233,8 @@ function CarPage() {
               <div className="rounded-2xl glass-strong p-6 shadow-elegant">
                 <div className="text-xs uppercase tracking-wider text-muted-foreground">Buy Now Price</div>
                 <div className="font-display text-4xl font-bold text-gradient-primary">{formatPrice(car.price)}</div>
-                <Button
-                  onClick={handleReserve}
-                  className="w-full mt-5 bg-gradient-primary border-0 text-primary-foreground h-12"
-                >
-                  Reserve this car
-                </Button>
-                <Button
-                  onClick={handleContactDealer}
-                  variant="outline"
-                  className="w-full mt-2 glass"
-                >
-                  Contact dealer
-                </Button>
+                <Button className="w-full mt-5 bg-gradient-primary border-0 text-primary-foreground h-12">Reserve this car</Button>
+                <Button variant="outline" className="w-full mt-2 glass">Contact dealer</Button>
               </div>
             )}
 
@@ -318,9 +248,7 @@ function CarPage() {
                   <div className="text-xs text-muted-foreground">Verified dealer · 4.9 ★ (218 reviews)</div>
                 </div>
               </div>
-              <Button onClick={handleChat} variant="outline" className="w-full mt-4 glass">
-                Chat with dealer
-              </Button>
+              <Button variant="outline" className="w-full mt-4 glass">Chat with dealer</Button>
             </div>
           </div>
         </div>
