@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { signOut } from "@/lib/auth";
 import { Route as RootRoute } from "@/routes/__root";
 import { useState, useRef, useEffect } from "react";
-import { toast } from "sonner";
+import { useFavorites } from "@/lib/favorites";
 
 export function Header() {
   const { user } = RootRoute.useRouteContext();
@@ -12,6 +12,7 @@ export function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const { count } = useFavorites();
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -27,10 +28,6 @@ export function Header() {
     setMenuOpen(false);
     await signOut();
     router.invalidate();
-  };
-
-  const handleFavorites = () => {
-    toast.info("Favorites coming soon!");
   };
 
   return (
@@ -70,8 +67,15 @@ export function Header() {
               </Link>
             </Button>
 
-            <Button variant="ghost" size="icon" className="hidden sm:inline-flex" onClick={handleFavorites}>
-              <Heart className="h-4 w-4" />
+            <Button asChild variant="ghost" size="icon" className="hidden sm:inline-flex relative">
+              <Link to="/favorites">
+                <Heart className={`h-4 w-4 ${count > 0 ? "fill-red-500 text-red-500" : ""}`} />
+                {count > 0 && (
+                  <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-[10px] font-bold text-white flex items-center justify-center">
+                    {count > 9 ? "9+" : count}
+                  </span>
+                )}
+              </Link>
             </Button>
 
             {user ? (
@@ -98,6 +102,14 @@ export function Header() {
                       <p className="text-xs text-muted-foreground truncate">{user.email}</p>
                     </div>
                     <div className="p-1">
+                      <Link
+                        to="/favorites"
+                        className="flex items-center gap-2 w-full px-3 py-2 text-sm rounded-lg hover:bg-secondary/60 transition-smooth"
+                        onClick={() => setMenuOpen(false)}
+                      >
+                        <Heart className="h-4 w-4 text-muted-foreground" />
+                        My Favorites {count > 0 && <span className="ml-auto text-xs bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded-full">{count}</span>}
+                      </Link>
                       <Link
                         to="/list-your-car"
                         className="flex items-center gap-2 w-full px-3 py-2 text-sm rounded-lg hover:bg-secondary/60 transition-smooth"
@@ -143,12 +155,12 @@ export function Header() {
           </div>
         </div>
 
-        {/* Mobile nav */}
         {mobileOpen && (
           <div className="md:hidden border-t border-border/40 px-4 py-3 space-y-1">
             {[
               { to: "/browse", label: "Browse" },
               { to: "/auctions", label: "Live Auctions" },
+              { to: "/favorites", label: `My Favorites${count > 0 ? ` (${count})` : ""}` },
               { to: "/admin", label: "Admin" },
               { to: "/list-your-car", label: "List Your Car" },
             ].map((l) => (

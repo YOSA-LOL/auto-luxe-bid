@@ -2,17 +2,18 @@ import { Link } from "@tanstack/react-router";
 import { Car, formatPrice, formatNumber } from "@/lib/mock-data";
 import { Badge } from "@/components/ui/badge";
 import { Heart, MapPin, Gauge, Fuel, CircleCheck, Radio } from "lucide-react";
-import { useState } from "react";
 import { toast } from "sonner";
+import { useFavorites } from "@/lib/favorites";
 
 export function CarCard({ car }: { car: Car }) {
   const live = car.isLive;
-  const [liked, setLiked] = useState(false);
+  const { isFavorited, toggle } = useFavorites();
+  const liked = isFavorited(car.id);
 
   const handleHeart = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setLiked((v) => !v);
+    toggle(car.id);
     toast.success(liked ? "Removed from favorites" : "Added to favorites ♥");
   };
 

@@ -13,6 +13,7 @@ import {
   MessageCircle, Phone, Mail, X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useFavorites } from "@/lib/favorites";
 
 export const Route = createFileRoute("/cars/$carId")({
   head: ({ params }) => {
@@ -44,12 +45,13 @@ export const Route = createFileRoute("/cars/$carId")({
 
 function CarPage() {
   const { car } = Route.useLoaderData();
+  const { isFavorited, toggle } = useFavorites();
+  const liked = isFavorited(car.id);
   const [bid, setBid] = useState(car.currentBid ?? car.price);
   const [bids, setBids] = useState<BidEntry[]>(
     car.isLive ? seedBids(car.currentBid!, car.minRaise!) : []
   );
   const [viewers, setViewers] = useState(car.viewers ?? 0);
-  const [liked, setLiked] = useState(false);
   const [selectedImg, setSelectedImg] = useState(0);
   const [showContact, setShowContact] = useState(false);
   const [showReserve, setShowReserve] = useState(false);
@@ -138,7 +140,7 @@ function CarPage() {
               </div>
               <div className="absolute top-4 right-4 flex gap-2">
                 <button
-                  onClick={() => { setLiked(!liked); toast.success(liked ? "Removed from favorites" : "Added to favorites ♥"); }}
+                  onClick={() => { toggle(car.id); toast.success(liked ? "Removed from favorites" : "Added to favorites ♥"); }}
                   className={`h-10 w-10 rounded-full glass flex items-center justify-center transition-smooth ${liked ? "text-red-500" : ""}`}
                 >
                   <Heart className={`h-4 w-4 ${liked ? "fill-current" : ""}`} />

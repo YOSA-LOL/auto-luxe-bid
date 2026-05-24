@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ListYourCarRouteImport } from './routes/list-your-car'
+import { Route as FavoritesRouteImport } from './routes/favorites'
 import { Route as BrowseRouteImport } from './routes/browse'
 import { Route as AuctionsRouteImport } from './routes/auctions'
 import { Route as AdminRouteImport } from './routes/admin'
@@ -26,6 +27,11 @@ const LoginRoute = LoginRouteImport.update({
 const ListYourCarRoute = ListYourCarRouteImport.update({
   id: '/list-your-car',
   path: '/list-your-car',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FavoritesRoute = FavoritesRouteImport.update({
+  id: '/favorites',
+  path: '/favorites',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BrowseRoute = BrowseRouteImport.update({
@@ -64,6 +70,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRoute
   '/auctions': typeof AuctionsRoute
   '/browse': typeof BrowseRoute
+  '/favorites': typeof FavoritesRoute
   '/list-your-car': typeof ListYourCarRoute
   '/login': typeof LoginRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -74,6 +81,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRoute
   '/auctions': typeof AuctionsRoute
   '/browse': typeof BrowseRoute
+  '/favorites': typeof FavoritesRoute
   '/list-your-car': typeof ListYourCarRoute
   '/login': typeof LoginRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -85,6 +93,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRoute
   '/auctions': typeof AuctionsRoute
   '/browse': typeof BrowseRoute
+  '/favorites': typeof FavoritesRoute
   '/list-your-car': typeof ListYourCarRoute
   '/login': typeof LoginRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -97,6 +106,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auctions'
     | '/browse'
+    | '/favorites'
     | '/list-your-car'
     | '/login'
     | '/auth/callback'
@@ -107,6 +117,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auctions'
     | '/browse'
+    | '/favorites'
     | '/list-your-car'
     | '/login'
     | '/auth/callback'
@@ -117,6 +128,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auctions'
     | '/browse'
+    | '/favorites'
     | '/list-your-car'
     | '/login'
     | '/auth/callback'
@@ -128,6 +140,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRoute
   AuctionsRoute: typeof AuctionsRoute
   BrowseRoute: typeof BrowseRoute
+  FavoritesRoute: typeof FavoritesRoute
   ListYourCarRoute: typeof ListYourCarRoute
   LoginRoute: typeof LoginRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
@@ -148,6 +161,13 @@ declare module '@tanstack/react-router' {
       path: '/list-your-car'
       fullPath: '/list-your-car'
       preLoaderRoute: typeof ListYourCarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/favorites': {
+      id: '/favorites'
+      path: '/favorites'
+      fullPath: '/favorites'
+      preLoaderRoute: typeof FavoritesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/browse': {
@@ -200,6 +220,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRoute,
   AuctionsRoute: AuctionsRoute,
   BrowseRoute: BrowseRoute,
+  FavoritesRoute: FavoritesRoute,
   ListYourCarRoute: ListYourCarRoute,
   LoginRoute: LoginRoute,
   AuthCallbackRoute: AuthCallbackRoute,

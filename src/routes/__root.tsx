@@ -12,6 +12,7 @@ import {
 import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { getUser, type SessionUser } from "@/lib/auth";
+import { FavoritesProvider } from "@/lib/favorites";
 
 const PUBLIC_PATHS = ["/login", "/auth"];
 
@@ -132,8 +133,10 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <Outlet />
-      <Toaster theme="dark" position="bottom-right" />
+      <FavoritesProvider>
+        <Outlet />
+        <Toaster theme="dark" position="bottom-right" />
+      </FavoritesProvider>
     </QueryClientProvider>
   );
 }
