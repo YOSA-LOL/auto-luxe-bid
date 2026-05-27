@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
@@ -83,6 +83,13 @@ function AdminPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("basic");
   const [mediaInput, setMediaInput] = useState({ image: "", video: "", doc: "" });
+
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
 
   const totalCars = cars.length;
   const liveCars = live.length;
@@ -313,11 +320,11 @@ function AdminPage() {
                         <span>{c.bids_count} bids</span>
                         <span>·</span>
                         <Eye className="h-3 w-3" />{c.viewers}
-                        {c.ends_at && (
+                        {c.ends_at && now && (
                           <>
                             <span>·</span>
                             <Clock className="h-3 w-3" />
-                            <span>{Math.max(0, Math.round((c.ends_at - Date.now()) / 60000))}m left</span>
+                            <span>{Math.max(0, Math.round((c.ends_at - now) / 60000))}m left</span>
                           </>
                         )}
                       </div>
@@ -374,13 +381,13 @@ function AdminPage() {
                           : <Badge variant="outline">Listed</Badge>}
                       </td>
                       <td className="py-3 pr-4">
-                        {c.ends_at ? (
+                        {c.ends_at && now ? (
                           <div className="flex items-center gap-1 text-xs">
                             <Timer className="h-3 w-3 text-muted-foreground" />
-                            <span className={c.ends_at < Date.now() ? "text-destructive" : "text-muted-foreground"}>
-                              {c.ends_at < Date.now()
+                            <span className={c.ends_at < now ? "text-destructive" : "text-muted-foreground"}>
+                              {c.ends_at < now
                                 ? "Ended"
-                                : `${Math.round((c.ends_at - Date.now()) / 60000)}m`}
+                                : `${Math.round((c.ends_at - now) / 60000)}m`}
                             </span>
                           </div>
                         ) : (
@@ -840,8 +847,8 @@ function AdminPage() {
                       {form.ends_at && (
                         <p className="text-xs text-muted-foreground mt-1">
                           Ends {new Date(form.ends_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}
-                          {form.ends_at > Date.now()
-                            ? ` — in ${Math.round((form.ends_at - Date.now()) / 60000)} minutes`
+                          {now && form.ends_at > now
+                            ? ` — in ${Math.round((form.ends_at - now) / 60000)} minutes`
                             : " — ALREADY ENDED"}
                         </p>
                       )}

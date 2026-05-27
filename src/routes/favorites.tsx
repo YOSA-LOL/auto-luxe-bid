@@ -24,8 +24,8 @@ export const Route = createFileRoute("/favorites")({
 
 function FavoritesPage() {
   const { cars } = Route.useLoaderData();
-  const { favorites, count } = useFavorites();
-  const favoritedCars = cars.filter((c) => favorites.includes(c.id));
+  const { isFavorited, count } = useFavorites();
+  const favoritedCars = cars.filter((c) => isFavorited(c.id));
 
   return (
     <div className="min-h-screen pb-nav md:pb-0">
