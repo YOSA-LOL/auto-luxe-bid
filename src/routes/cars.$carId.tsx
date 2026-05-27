@@ -89,8 +89,8 @@ function CarPage() {
         data: { carId: car.id, amount: bidInput, userName: "You" },
       });
       if (updated) {
-        setCurrentBid(updated.current_bid ?? bidInput);
-        setBidInput((updated.current_bid ?? bidInput) + car.minRaise);
+        setCurrentBid(updated.amount);
+        setBidInput(updated.amount + car.minRaise);
       }
       const freshBids = await getBidsForCar({ data: car.id });
       setBids(freshBids);
