@@ -204,4 +204,24 @@
     transform: translateY(-6px);
     box-shadow: var(--shadow-elegant), var(--shadow-glow);
   }
+
+  /* Mobile safe area padding */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .pb-nav {
+    padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Mobile touch improvements */
+  @media (max-width: 767px) {
+    .hover-lift:hover {
+      transform: none;
+      box-shadow: none;
+    }
+    .hover-lift:active {
+      transform: scale(0.98);
+      opacity: 0.9;
+    }
+  }
 }

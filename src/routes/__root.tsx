@@ -6,10 +6,16 @@ import {
   useRouter,
   HeadContent,
   Scripts,
+  redirect,
 } from "@tanstack/react-router";
 
 import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
+import { getUser, type SessionUser } from "@/lib/auth";
+import { FavoritesProvider } from "@/lib/favorites";
+import { BottomNav } from "@/components/layout/BottomNav";
+
+const PUBLIC_PATHS = ["/login", "/auth"];
 
 function NotFoundComponent() {
   return (
@@ -68,7 +74,7 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   );
 }
 
-export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+export const Route = createRootRouteWithContext<{ queryClient: QueryClient; user: SessionUser | null }>()({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
@@ -91,6 +97,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Manrope:wght@300;400;500;600;700&display=swap" },
     ],
   }),
+  beforeLoad: async ({ location }) => {
+    const user = await getUser();
+    const isPublic = PUBLIC_PATHS.some((p) => location.pathname.startsWith(p));
+
+    if (!user && !isPublic) {
+      throw redirect({ to: "/login" });
+    }
+    if (user && location.pathname === "/login") {
+      throw redirect({ to: "/" });
+    }
+    return { user };
+  },
   shellComponent: RootShell,
   component: RootComponent,
   notFoundComponent: NotFoundComponent,
@@ -116,8 +134,11 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <Outlet />
-      <Toaster theme="dark" position="bottom-right" />
+      <FavoritesProvider>
+        <Outlet />
+        <BottomNav />
+        <Toaster theme="dark" position="bottom-center" className="mb-20 md:mb-0" />
+      </FavoritesProvider>
     </QueryClientProvider>
   );
 }
