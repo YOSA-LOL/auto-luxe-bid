@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 
 type FavoritesContextValue = {
   favorites: Set<string>;
@@ -9,16 +9,19 @@ type FavoritesContextValue = {
 
 const FavoritesContext = createContext<FavoritesContextValue | null>(null);
 
+const STORAGE_KEY = "apexauto_favorites";
+
 export function FavoritesProvider({ children }: { children: ReactNode }) {
-  const [favorites, setFavorites] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set();
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
     try {
-      const stored = localStorage.getItem("apexauto_favorites");
-      return stored ? new Set(JSON.parse(stored) as string[]) : new Set();
-    } catch {
-      return new Set();
-    }
-  });
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        setFavorites(new Set(JSON.parse(stored) as string[]));
+      }
+    } catch {}
+  }, []);
 
   const toggle = useCallback((id: string) => {
     setFavorites((prev) => {
@@ -29,7 +32,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
         next.add(id);
       }
       try {
-        localStorage.setItem("apexauto_favorites", JSON.stringify([...next]));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify([...next]));
       } catch {}
       return next;
     });
