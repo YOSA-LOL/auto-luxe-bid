@@ -1,0 +1,14 @@
+- [listing-requests-db](listing-requests-db.md) — listing_requests table schema and server functions for buyer submissions flow
+- [APEXAuto arch decisions](apexauto-arch.md) — key patterns: demo auth always "Alex Hassan", sessions via localStorage, notifications/compare/recently-viewed are localStorage-only, proxy bids in DB.
+- [Clerk key-switch stale cookie loop](clerk-key-switch-stale-cookie.md) — "keys do not match" redirect-loop warning can be a stale-cookie artifact, not an actual key mismatch; verify via JWKS before assuming keys are wrong.
+- [pg static import client leak](pg-static-import-client-leak.md) — static `import { Pool } from "pg"` in *.server.ts can leak into client bundle on cold start; use dynamic `await import("pg")` instead.
+- [Clerk org-required blocks auth() SSR](clerk-org-required-ssr.md) — when Clerk requires org creation, auth() returns null server-side until org exists; use client-side isSignedIn from useAuth() as the gate instead of SSR user.
+- [Clerk missing secret crashes all routes](clerk-missing-secret.md) — when CLERK_SECRET_KEY is unset, clerkMiddleware throws on every request; guard with `clerkSecretKey ? clerkMiddleware(...) : passthroughMiddleware` in start.ts.
+- [ensureTables parallel race condition](ensure-tables-race.md) — concurrent loader calls to multiple server fns that each call ensureTables() cause pg duplicate-key errors; use a module-level promise singleton to serialize the first run.
+- [SSR Date.now() hydration crash](ssr-date-now-hydration.md) — useState(Date.now()) or const now = Date.now() in render body causes React hydration mismatch; always defer to useEffect with null/0 initial state.
+- [Date.now() in map/render body](render-body-date-now.md) — Date.now() inside .map() callbacks or any render-body expression also causes hydration mismatch → "Invalid hook call" cascade; use the existing `now` state (null on SSR) instead.
+- [Admin permissions system](admin-permissions.md) — isAdmin via Clerk publicMetadata.role OR ADMIN_EMAIL env var; loader + client guard. Admin loader is fail-closed: `if (!user || !user.isAdmin) throw redirect`.
+- [Clerk currentUser not exported](clerk-currentuser-missing.md) — use auth()+clerkClient().users.getUser() instead.
+- [AuthGuard SSR hydration fix](authguard-ssr-hydration.md) — Clerk AuthGuard must use SSR-provided `user` prop, not isLoaded, to decide initial render; otherwise signed-in users get server=Outlet vs client=loadingSplash mismatch.
+- [Clerk config source of truth](clerk-config-source-of-truth.md) — all server Clerk calls must import keys from src/lib/clerk-config.ts; env var CLERK_SECRET_KEY is wrong app, always pass secretKey explicitly to clerkClient.
+- [NavigationProgress SSR mismatch](nav-progress-ssr.md) — useRouterState returns "pending" during SSR; gate render with mounted state to avoid hydration crash.
