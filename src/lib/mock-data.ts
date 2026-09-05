@@ -19,7 +19,6 @@ export type Car = {
   color: string;
   condition: "Excellent" | "Very Good" | "Good";
   image: string;
-  dealership: string;
   city: string;
   verified: boolean;
   hp: number;
@@ -51,7 +50,6 @@ export const CARS: Car[] = [
     color: "Indigo Metallic",
     condition: "Excellent",
     image: car1,
-    dealership: "Apex Motors Cairo",
     city: "Cairo",
     verified: true,
     hp: 612,
@@ -79,7 +77,6 @@ export const CARS: Car[] = [
     color: "Fuji White",
     condition: "Excellent",
     image: car2,
-    dealership: "Crown Auto Group",
     city: "New Cairo",
     verified: true,
     hp: 440,
@@ -107,7 +104,6 @@ export const CARS: Car[] = [
     color: "Renaissance Red",
     condition: "Very Good",
     image: car3,
-    dealership: "Velocity Garage",
     city: "Alexandria",
     verified: true,
     hp: 382,
@@ -135,7 +131,6 @@ export const CARS: Car[] = [
     color: "Silver Sand",
     condition: "Excellent",
     image: car4,
-    dealership: "Imperial Cars",
     city: "Cairo",
     verified: true,
     hp: 563,
@@ -158,7 +153,6 @@ export const CARS: Car[] = [
     color: "Sublime Green",
     condition: "Very Good",
     image: car5,
-    dealership: "Heritage Collection",
     city: "Giza",
     verified: true,
     hp: 425,
@@ -181,7 +175,6 @@ export const CARS: Car[] = [
     color: "French Racing Blue",
     condition: "Excellent",
     image: car6,
-    dealership: "Apex Motors Cairo",
     city: "Cairo",
     verified: true,
     hp: 1500,

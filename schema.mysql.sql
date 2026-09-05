@@ -59,6 +59,12 @@ CREATE TABLE IF NOT EXISTS cars (
   is_live                TINYINT(1) DEFAULT 0,
   is_sold                TINYINT(1) DEFAULT 0,
   sold_at                DATETIME(3),
+  is_visible             TINYINT(1) DEFAULT 1,
+  auction_status         ENUM('none','live','ended','ended_with_winner','no_sale','sold') NOT NULL DEFAULT 'none',
+  winner_email           VARCHAR(255) NULL,
+  winner_name            VARCHAR(255) NULL,
+  winning_bid_id         INT NULL,
+  ended_at               DATETIME(3) NULL,
   current_bid            DECIMAL(15,2),
   starting_price         DECIMAL(15,2),
   buy_now_price          DECIMAL(15,2),
@@ -93,9 +99,11 @@ CREATE TABLE IF NOT EXISTS bids (
   id         INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   car_id     VARCHAR(255) NOT NULL,
   user_name  VARCHAR(255) NOT NULL,
+  user_email VARCHAR(255) NULL,
   amount     DECIMAL(15,2) NOT NULL,
   created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
-  FOREIGN KEY (car_id) REFERENCES cars(id) ON DELETE CASCADE
+  FOREIGN KEY (car_id) REFERENCES cars(id) ON DELETE CASCADE,
+  INDEX bids_car_amount_idx (car_id, amount DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------
@@ -123,24 +131,7 @@ CREATE TABLE IF NOT EXISTS favorites (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------
--- 6. listing_requests  ("sell your car" submissions)
--- ------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS listing_requests (
-  id         INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  name       VARCHAR(255) NOT NULL,
-  email      VARCHAR(255) NOT NULL,
-  phone      VARCHAR(50),
-  brand      VARCHAR(100) NOT NULL,
-  model      VARCHAR(100) NOT NULL,
-  year       VARCHAR(10),
-  price      VARCHAR(50),
-  notes      TEXT,
-  status     VARCHAR(50) NOT NULL DEFAULT 'pending',
-  created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ------------------------------------------------------------
--- 7. auction_entry_requests  (deposit proof submissions)
+-- 6. auction_entry_requests  (deposit proof submissions)
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS auction_entry_requests (
   id               INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -168,6 +159,7 @@ CREATE TABLE IF NOT EXISTS site_settings (
 -- Seed default settings (safe to re-run)
 INSERT IGNORE INTO site_settings (`key`, value) VALUES
   ('deposit_amount',      '500'),
+  ('transfer_number',     ''),
   ('payment_info',        ''),
   ('featured_hero_car_id','');
 
@@ -180,6 +172,11 @@ CREATE TABLE IF NOT EXISTS deposits (
   car_id                   VARCHAR(255) NOT NULL,
   stripe_payment_intent_id VARCHAR(255),
   amount                   INT NOT NULL DEFAULT 500,
+  instapay_number          VARCHAR(255) NULL,
+  refund_status            ENUM('none','pending','refunded') NOT NULL DEFAULT 'none',
+  refund_amount            DECIMAL(15,2) NULL,
+  refunded_at              DATETIME(3) NULL,
+  approved_at              DATETIME(3) NULL,
   status                   VARCHAR(50) NOT NULL DEFAULT 'pending',
   created_at               DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
   UNIQUE KEY uq_deposit (user_email, car_id)
@@ -199,8 +196,76 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   INDEX chat_messages_car_buyer_idx (car_id, buyer_email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ------------------------------------------------------------
+-- 11. reviews  (dealer & buyer ratings)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS reviews (
+  id          INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  car_id      VARCHAR(255) NOT NULL,
+  user_email  VARCHAR(255) NOT NULL,
+  user_name   VARCHAR(255) NOT NULL DEFAULT '',
+  rating      TINYINT NOT NULL,
+  comment     TEXT,
+  review_type ENUM('dealer','buyer') NOT NULL DEFAULT 'dealer',
+  created_at  DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+  UNIQUE KEY uq_review (car_id, user_email, review_type),
+  FOREIGN KEY (car_id) REFERENCES cars(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------
+-- 12. activity_log  (admin actions audit trail)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS activity_log (
+  id          INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  admin_email VARCHAR(255) NOT NULL,
+  action      VARCHAR(100) NOT NULL,
+  entity_type VARCHAR(50),
+  entity_id   VARCHAR(255),
+  details     TEXT,
+  created_at  DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------
+-- 13. broadcast_notifications  (admin → all users)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS broadcast_notifications (
+  id         INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  title      VARCHAR(255) NOT NULL,
+  body       TEXT NOT NULL,
+  sent_by    VARCHAR(255) NOT NULL,
+  created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------
+-- 14. expenses  (showroom costs)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS expenses (
+  id           INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  title        VARCHAR(255) NOT NULL,
+  category     VARCHAR(100),
+  amount       DECIMAL(15,2) NOT NULL,
+  expense_date DATE NOT NULL,
+  notes        TEXT,
+  created_at   DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------
+-- 15. user_notifications  (per-user in-app notifications)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS user_notifications (
+  id         INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  user_email VARCHAR(255) NOT NULL,
+  type       VARCHAR(50) NOT NULL,
+  title      VARCHAR(255) NOT NULL,
+  body       TEXT,
+  car_id     VARCHAR(255),
+  read_at    DATETIME(3) NULL,
+  created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+  INDEX user_notifications_email_idx (user_email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- =============================================================
--- Done. All 10 tables created.
+-- Done. All 13 tables created.
 -- =============================================================

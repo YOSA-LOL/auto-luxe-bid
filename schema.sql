@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS cars (
   is_live                BOOLEAN DEFAULT FALSE,
   is_sold                BOOLEAN DEFAULT FALSE,
   sold_at                TIMESTAMPTZ,
+  is_visible             BOOLEAN DEFAULT TRUE,
   current_bid            NUMERIC,
   starting_price         NUMERIC,
   buy_now_price          NUMERIC,
@@ -164,6 +165,7 @@ CREATE TABLE IF NOT EXISTS site_settings (
 -- Seed default settings (safe to re-run)
 INSERT INTO site_settings (key, value) VALUES
   ('deposit_amount',    '500'),
+  ('transfer_number',   ''),
   ('payment_info',      ''),
   ('featured_hero_car_id', '')
 ON CONFLICT (key) DO NOTHING;

@@ -9,11 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Heart, ArrowRight } from "lucide-react";
 import { useLanguage } from "@/lib/language";
 
+import { brandPageTitle, BRAND_NAME } from "@/lib/brand";
+
 export const Route = createFileRoute("/favorites")({
   head: () => ({
     meta: [
-      { title: "My Favorites — APEXAuto" },
-      { name: "description", content: "Your saved cars on APEXAuto." },
+      { title: brandPageTitle("My Favorites") },
+      { name: "description", content: `Your saved cars on ${BRAND_NAME}.` },
     ],
   }),
   loader: async () => {
@@ -30,17 +32,17 @@ function FavoritesPage() {
   const { t } = useLanguage();
 
   return (
-    <div className="min-h-screen pb-nav md:pb-0">
+    <div className="min-h-screen pb-nav">
       <Header />
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
+      <div className="page-content max-w-7xl">
         <div className="flex items-center gap-3 mb-2">
           <Heart className={`h-5 w-5 ${count > 0 ? "fill-red-500 text-red-500" : "text-muted-foreground"}`} />
           <span className="text-xs uppercase tracking-[0.2em] text-primary-glow font-semibold">Saved</span>
         </div>
-        <h1 className="font-display text-4xl sm:text-5xl font-bold mb-2">
+        <h1 className="page-title mb-2">
           {t("fav_title")}
         </h1>
-        <p className="text-muted-foreground mb-10">
+        <p className="text-muted-foreground mb-6 sm:mb-10 page-subtitle">
           {count === 0 ? t("fav_empty_p") : t("browse_results", { n: count })}
         </p>
 

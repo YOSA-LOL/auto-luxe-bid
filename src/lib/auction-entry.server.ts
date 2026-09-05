@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { auth, clerkClient } from "@clerk/tanstack-react-start/server";
-import { CLERK_SECRET_KEY } from "./clerk-config";
+import { CLERK_SECRET_KEY } from "./clerk-config.server";
 import { resolveIsAdmin } from "./admin-access.server";
 import { getDb } from "./db.server";
 
@@ -20,6 +20,9 @@ export type AuctionEntryRequest = {
 
 export type DepositSettings = {
   depositAmount: number;
+  /** Instapay / account number users transfer the deposit to */
+  transferNumber: string;
+  /** Optional extra payment instructions */
   paymentInfo: string;
 };
 
@@ -77,6 +80,7 @@ export const updateAuctionEntryStatus = createServerFn()
     rejectionReason?: string;
     userEmail?: string;
     carId?: string;
+    depositAmount?: number;
   }) => input)
   .handler(async ({ data }): Promise<void> => {
     const db = getDb();
@@ -85,11 +89,18 @@ export const updateAuctionEntryStatus = createServerFn()
       [data.status, data.rejectionReason ?? null, data.id]
     );
     if (data.status === "approved" && data.userEmail && data.carId) {
+      const amount = data.depositAmount ?? 500;
+      const { rows: entryRows } = await db.query<{ instapay_number: string }>(
+        `SELECT instapay_number FROM auction_entry_requests WHERE id = $1`,
+        [data.id],
+      );
+      const instapay = entryRows[0]?.instapay_number ?? "";
       await db.query(
-        `INSERT INTO deposits (user_email, car_id, status, amount)
-         VALUES ($1, $2, 'paid', 500)
-         ON DUPLICATE KEY UPDATE status = 'paid'`,
-        [data.userEmail, data.carId]
+        `INSERT INTO deposits (user_email, car_id, status, amount, instapay_number, approved_at)
+         VALUES ($1, $2, 'paid', $3, $4, NOW())
+         ON DUPLICATE KEY UPDATE status = 'paid', amount = VALUES(amount),
+           instapay_number = VALUES(instapay_number), approved_at = NOW()`,
+        [data.userEmail, data.carId, amount, instapay],
       );
     }
   });
@@ -97,30 +108,53 @@ export const updateAuctionEntryStatus = createServerFn()
 export const getAuctionDepositSettings = createServerFn().handler(async (): Promise<DepositSettings> => {
   const db = getDb();
   const { rows } = await db.query<{ key: string; value: string }>(
-    `SELECT \`key\`, value FROM site_settings WHERE \`key\` IN ('deposit_amount', 'payment_info')`
+    `SELECT \`key\`, value FROM site_settings WHERE \`key\` IN ('deposit_amount', 'transfer_number', 'payment_info')`
   );
   const map: Record<string, string> = {};
   for (const row of rows) map[row.key] = row.value;
+  const rawTransfer = map["transfer_number"] ?? "";
+  const rawPayment = map["payment_info"] ?? "";
+  const transferNumber = (rawTransfer || rawPayment).trim();
   return {
     depositAmount: parseInt(map["deposit_amount"] ?? "500", 10),
-    paymentInfo: map["payment_info"] ?? "",
+    transferNumber,
+    paymentInfo: rawTransfer ? rawPayment.trim() : "",
   };
 });
 
 export const updateAuctionDepositSettings = createServerFn()
-  .inputValidator((input: { depositAmount: number; paymentInfo: string }) => input)
+  .inputValidator((input: { depositAmount: number; transferNumber: string; paymentInfo: string }) => input)
   .handler(async ({ data }): Promise<void> => {
+    if (process.env.CLERK_SECRET_KEY) {
+      try {
+        const { userId } = await auth();
+        if (!userId) throw new Error("Unauthorized");
+        const client = clerkClient({ secretKey: CLERK_SECRET_KEY });
+        const clerkUser = await client.users.getUser(userId);
+        const email = clerkUser.emailAddresses[0]?.emailAddress ?? "";
+        const isAdmin = resolveIsAdmin(email);
+        if (!isAdmin) throw new Error("Forbidden");
+      } catch (err: unknown) {
+        if (err instanceof Error && (err.message === "Unauthorized" || err.message === "Forbidden")) throw err;
+        throw new Error("Authorization check failed");
+      }
+    }
+
     const db = getDb();
-    // ON DUPLICATE KEY UPDATE replaces Postgres ON CONFLICT DO UPDATE
     await db.query(
       `INSERT INTO site_settings (\`key\`, value) VALUES ('deposit_amount', $1)
        ON DUPLICATE KEY UPDATE value = VALUES(value)`,
       [String(data.depositAmount)]
     );
     await db.query(
+      `INSERT INTO site_settings (\`key\`, value) VALUES ('transfer_number', $1)
+       ON DUPLICATE KEY UPDATE value = VALUES(value)`,
+      [data.transferNumber.trim()]
+    );
+    await db.query(
       `INSERT INTO site_settings (\`key\`, value) VALUES ('payment_info', $1)
        ON DUPLICATE KEY UPDATE value = VALUES(value)`,
-      [data.paymentInfo]
+      [data.paymentInfo.trim()]
     );
   });
 

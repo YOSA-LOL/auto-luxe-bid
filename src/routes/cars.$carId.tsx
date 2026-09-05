@@ -1,6 +1,5 @@
 import { createFileRoute, notFound, Link } from "@tanstack/react-router";
-import { useEffect, useState, useRef, useCallback } from "react";
-import { sendChatMessage, getChatMessages, type ChatMessage } from "@/lib/chat.server";
+import { useEffect, useState, useRef } from "react";
 import { submitAuctionEntryRequest, getAuctionEntryStatus, getAuctionDepositSettings, type DepositSettings, type AuctionEntryRequest } from "@/lib/auction-entry.server";
 import { uploadImage } from "@/lib/upload.server";
 import { Header } from "@/components/layout/Header";
@@ -19,7 +18,7 @@ import {
   Heart, Radio, Users, Gavel, CircleCheck,
   Gauge, Fuel, Cog, Palette, Hash, MapPin, TrendingUp, Plus,
   MessageCircle, Phone, Mail, X, Play, ExternalLink,
-  FileText, Printer, Download, MessageSquare, Store,
+  FileText, Printer, Download, MessageSquare,
   Bell, BellOff, Trophy, ShoppingCart,
   Upload, Clock, CheckCircle2, XCircle,
 } from "lucide-react";
@@ -29,7 +28,10 @@ import { useLanguage } from "@/lib/language";
 import { addNotification } from "@/lib/notifications";
 import { addRecentlyViewed } from "@/lib/recently-viewed";
 import { setPriceAlert, removePriceAlert, hasPriceAlert, getPriceAlertTarget } from "@/lib/price-alerts";
-import { addToCompare, removeFromCompare, isInCompare } from "@/lib/compare";
+import { PageMeta } from "@/components/PageMeta";
+import { SpecHotspots } from "@/components/SpecHotspots";
+import { useThemeMode } from "@/lib/theme-mode";
+import { BRAND_NAME, INFO_EMAIL } from "@/lib/brand";
 
 function AuctionEntryModal({
   carId,
@@ -48,6 +50,7 @@ function AuctionEntryModal({
   onClose: () => void;
   onSubmitted: () => void;
 }) {
+  const { t } = useLanguage();
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [proofPreview, setProofPreview] = useState<string | null>(null);
   const [instapayNumber, setInstapayNumber] = useState("");
@@ -83,13 +86,17 @@ function AuctionEntryModal({
     reader.readAsDataURL(file);
   };
 
+  const refundAmount = Math.round(depositSettings.depositAmount * 0.8);
+  const feeAmount = Math.round(depositSettings.depositAmount * 0.2);
+  const transferTarget = depositSettings.transferNumber.trim();
+
   const handleSubmit = async () => {
     if (!proofFile || !proofPreview) {
-      toast.error("Please upload your payment screenshot");
+      toast.error(t("toast_upload_proof"));
       return;
     }
     if (!instapayNumber.trim()) {
-      toast.error("Please enter your Instapay number for the refund");
+      toast.error(t("toast_instapay_required"));
       return;
     }
     setSubmitting(true);
@@ -105,17 +112,17 @@ function AuctionEntryModal({
           depositAmount: depositSettings.depositAmount,
         },
       });
-      toast.success("Request submitted — the admin will review it shortly.");
+      toast.success(t("toast_entry_submitted"));
       addNotification({
         type: "entry_submitted",
-        title: "Auction entry request sent",
-        body: `Your deposit proof for ${carTitle} has been submitted. You'll be notified once the admin reviews it.`,
+        title: t("notif_entry_submitted_title"),
+        body: t("notif_entry_submitted_body", { car: carTitle }),
         carId,
       });
       onSubmitted();
       onClose();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to submit request");
+      toast.error(err instanceof Error ? err.message : t("toast_submit_fail"));
     } finally {
       setSubmitting(false);
     }
@@ -128,61 +135,73 @@ function AuctionEntryModal({
     >
       <div className="glass-strong rounded-3xl border border-border/60 p-6 shadow-elegant max-w-md w-full animate-fade-up max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="font-display text-xl font-bold">Request Auction Entry</h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+          <h2 className="font-display text-xl font-bold">{t("entry_title")}</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors" aria-label={t("common_close")}>
             <X className="h-5 w-5" />
           </button>
         </div>
 
         <div className="p-4 rounded-xl bg-primary/10 border border-primary/20 mb-3">
-          <p className="text-xs text-muted-foreground mb-1">Deposit required to join this auction</p>
-          <p className="text-2xl font-display font-bold text-primary-glow">
+          <p className="text-xs text-muted-foreground mb-1">{t("entry_deposit_required")}</p>
+          <p className="text-2xl font-display font-bold text-primary-glow" dir="ltr">
             EGP {depositSettings.depositAmount.toLocaleString()}
           </p>
           <p className="text-xs text-muted-foreground mt-1">
-            If you don't win, <span className="text-foreground font-semibold">80% of your deposit</span> (EGP {Math.round(depositSettings.depositAmount * 0.8).toLocaleString()}) will be refunded to your Instapay account.
+            {t("entry_refund_note", {
+              pct: t("entry_refund_pct"),
+              amount: refundAmount.toLocaleString(),
+            })}
           </p>
         </div>
 
         <div className="p-3 rounded-xl bg-yellow-500/8 border border-yellow-500/20 mb-4">
           <p className="text-[11px] text-yellow-400/90 leading-relaxed">
-            The remaining 20% (EGP {Math.round(depositSettings.depositAmount * 0.2).toLocaleString()}) covers administrative and processing fees and is non-refundable.
+            {t("entry_fee_note", { amount: feeAmount.toLocaleString() })}
           </p>
         </div>
 
         <div className="p-4 rounded-xl bg-secondary/50 border border-border/40 mb-5">
-          <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Transfer to</p>
-          {depositSettings.paymentInfo ? (
-            <p className="text-sm font-medium whitespace-pre-line leading-relaxed">{depositSettings.paymentInfo}</p>
+          <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">{t("entry_transfer_to")}</p>
+          {transferTarget ? (
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">{t("entry_transfer_instapay")}</p>
+              <p className="text-xl font-display font-bold text-primary-glow font-mono tracking-wide" dir="ltr">
+                {transferTarget}
+              </p>
+              {depositSettings.paymentInfo.trim() && (
+                <p className="text-sm text-muted-foreground mt-2 whitespace-pre-line leading-relaxed">{depositSettings.paymentInfo}</p>
+              )}
+            </div>
           ) : (
-            <p className="text-sm text-muted-foreground italic">Payment info not configured. Contact admin.</p>
+            <p className="text-sm text-muted-foreground italic">{t("entry_pay_not_configured")}</p>
           )}
         </div>
 
         <div className="mb-5">
-          <label className="text-sm font-semibold block mb-1">Your Instapay number</label>
+          <label className="text-sm font-semibold block mb-1">{t("entry_instapay")}</label>
           <p className="text-xs text-muted-foreground mb-2">
-            We'll send your refund to this number if you don't win.
+            {t("entry_instapay_hint")}
           </p>
           <Input
             value={instapayNumber}
             onChange={(e) => setInstapayNumber(e.target.value)}
-            placeholder="e.g. 01012345678"
+            placeholder={t("entry_instapay_ph")}
             className="bg-background/50"
+            dir="ltr"
           />
         </div>
 
         <div className="mb-5">
-          <p className="text-sm font-semibold mb-1">Upload payment proof</p>
+          <p className="text-sm font-semibold mb-1">{t("entry_upload_proof")}</p>
           <p className="text-xs text-muted-foreground mb-3">
-            Screenshot of your Instapay / bank transfer confirmation.
+            {t("entry_upload_hint")}
           </p>
           <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
           {proofPreview ? (
             <div className="relative">
               <img
                 src={proofPreview}
-                alt="Payment proof"
+                alt={t("entry_upload_proof")}
                 className="w-full rounded-xl border border-border/40 max-h-52 object-contain bg-black/20"
               />
               <button
@@ -198,7 +217,7 @@ function AuctionEntryModal({
               className="w-full border-2 border-dashed border-border/60 rounded-xl py-8 flex flex-col items-center gap-2 hover:border-primary/50 transition-colors"
             >
               <Upload className="h-8 w-8 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Click to upload screenshot</span>
+              <span className="text-sm text-muted-foreground">{t("entry_upload_click")}</span>
             </button>
           )}
         </div>
@@ -208,7 +227,7 @@ function AuctionEntryModal({
           disabled={!proofFile || !instapayNumber.trim() || submitting}
           className="w-full bg-gradient-primary border-0 text-primary-foreground h-11"
         >
-          {submitting ? "Submitting..." : "Submit Request"}
+          {submitting ? t("common_submitting") : t("entry_submit")}
         </Button>
       </div>
     </div>
@@ -261,6 +280,7 @@ function CarPage() {
   const { isFavorited, toggle } = useFavorites();
   const liked = isFavorited(car.id);
   const { t } = useLanguage();
+  const { isLight } = useThemeMode();
 
   const [currentBid, setCurrentBid] = useState(car.currentBid ?? car.price);
   const [bidInput, setBidInput] = useState(
@@ -270,10 +290,7 @@ function CarPage() {
   const [viewers, setViewers] = useState(car.viewers ?? 0);
   const [selectedImg, setSelectedImg] = useState(0);
   const [showContact, setShowContact] = useState(false);
-  const [showReserve, setShowReserve] = useState(false);
   const [showBuyNow, setShowBuyNow] = useState(false);
-  const [showChat, setShowChat] = useState(false);
-  const [chatMsg, setChatMsg] = useState("");
   const [isPlacingBid, setIsPlacingBid] = useState(false);
   const [showProxyBid, setShowProxyBid] = useState(false);
   const [proxyBidInput, setProxyBidInput] = useState(0);
@@ -282,13 +299,9 @@ function CarPage() {
   const [priceAlertActive, setPriceAlertActive] = useState(false);
   const [priceAlertTarget, setPriceAlertTargetState] = useState(0);
   const [showPriceAlert, setShowPriceAlert] = useState(false);
-  const [inCompare, setInCompare] = useState(false);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatLoading, setChatLoading] = useState(false);
-  const chatBottomRef = useRef<HTMLDivElement>(null);
   const [depositPaid, setDepositPaid] = useState(false);
   const [showAuctionEntryModal, setShowAuctionEntryModal] = useState(false);
-  const [depositSettings, setDepositSettings] = useState<DepositSettings>({ depositAmount: 500, paymentInfo: "" });
+  const [depositSettings, setDepositSettings] = useState<DepositSettings>({ depositAmount: 500, transferNumber: "", paymentInfo: "" });
   const [entryStatus, setEntryStatus] = useState<AuctionEntryRequest | null>(null);
   // Deferred Date.now() — start at 0 on SSR, set after hydration to avoid mismatch
   const [now, setNow] = useState<number>(0);
@@ -300,12 +313,9 @@ function CarPage() {
     setPriceAlertActive(active);
     const target = getPriceAlertTarget(car.id);
     setPriceAlertTargetState(target ?? Math.round((car.currentBid ?? car.price) * 0.9));
-    setInCompare(isInCompare(car.id));
     getProxyBid({ data: { carId: car.id, userName: user?.name ?? "You" } }).then((p) => {
       if (p) setExistingProxy(p.max_amount);
     }).catch(() => {});
-    const compareHandler = () => setInCompare(isInCompare(car.id));
-    window.addEventListener("apex_compare_changed", compareHandler);
     if (car.isLive) {
       getAuctionDepositSettings().then(setDepositSettings).catch(() => {});
       if (user?.email) {
@@ -313,12 +323,9 @@ function CarPage() {
           setEntryStatus(status);
           if (status?.status === "approved") setDepositPaid(true);
         }).catch(() => {});
-        if (initialBids.some((b) => b.user_name === user.name)) {
-          setDepositPaid(true);
-        }
       }
     }
-    return () => window.removeEventListener("apex_compare_changed", compareHandler);
+    return () => {};
   }, [car.id, car.isLive, user?.email, user?.name]);
 
   const galleryImages = [car.image, ...car.images].filter((u) => u && u.trim() !== "");
@@ -344,7 +351,7 @@ function CarPage() {
     setIsPlacingBid(true);
     try {
       const updated = await placeBidInDb({
-        data: { carId: car.id, amount, userName: user?.name ?? "You" },
+        data: { carId: car.id, amount },
       });
       if (updated) {
         const amt = Number(updated.amount);
@@ -372,7 +379,7 @@ function CarPage() {
     }
     if (car.isLive && !depositPaid) {
       if (entryStatus?.status === "pending") {
-        toast.info("Your entry request is pending admin review.");
+        toast.info(t("toast_entry_pending"));
         return;
       }
       setShowAuctionEntryModal(true);
@@ -393,20 +400,8 @@ function CarPage() {
 
   const handleWhatsApp = () => {
     const url = window.location.href;
-    const text = encodeURIComponent(`Check out this ${car.title} on APEXAuto: ${url}`);
+    const text = encodeURIComponent(`Check out this ${car.title} on ${BRAND_NAME}: ${url}`);
     window.open(`https://wa.me/?text=${text}`, "_blank");
-  };
-
-  const handleCompareToggle = () => {
-    if (inCompare) {
-      removeFromCompare(car.id);
-      setInCompare(false);
-      toast.info("Removed from comparison");
-    } else {
-      addToCompare(car.id);
-      setInCompare(true);
-      toast.success("Added to comparison");
-    }
   };
 
   const handleProxyBid = async () => {
@@ -416,7 +411,7 @@ function CarPage() {
     }
     setIsSettingProxy(true);
     try {
-      await setProxyBid({ data: { carId: car.id, userName: user?.name ?? "You", maxAmount: proxyBidInput } });
+      await setProxyBid({ data: { carId: car.id, maxAmount: proxyBidInput } });
       setExistingProxy(proxyBidInput);
       setShowProxyBid(false);
       toast.success(`Proxy bid set to ${formatPrice(proxyBidInput)}. We'll bid automatically up to this amount.`);
@@ -510,10 +505,11 @@ function CarPage() {
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>${car.title} — APEXAuto</title>
+  <title>${car.title} — ${BRAND_NAME}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, sans-serif; color: #111; background: #fff; padding: 32px; max-width: 860px; margin: 0 auto; }
+    @page { size: A4; margin: 12mm; }
+    body { font-family: system-ui, sans-serif; color: #111; background: #fff; padding: 0; max-width: 860px; margin: 0 auto; }
     h1 { font-size: 26px; font-weight: 700; margin-bottom: 4px; }
     h2 { font-size: 16px; font-weight: 700; margin-bottom: 14px; padding-bottom: 6px; border-bottom: 2px solid #e5e7eb; color: #111; }
     .meta { font-size: 13px; color: #6b7280; margin-bottom: 24px; }
@@ -524,15 +520,16 @@ function CarPage() {
     .condition-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
     @media (max-width: 600px) { .condition-grid { grid-template-columns: 1fr 1fr; } }
     @media print {
-      body { padding: 16px; }
+      body { padding: 0; margin: 0; }
+      .section { page-break-inside: avoid; }
       button { display: none; }
     }
   </style>
 </head>
 <body>
-  <div class="logo">APEXAuto</div>
+  <div class="logo">${BRAND_NAME}</div>
   <h1>${car.title}</h1>
-  <div class="meta">${car.brand} &middot; ${car.year} &middot; ${car.color} &middot; ${car.city} &middot; ${car.dealership}</div>
+  <div class="meta">${car.brand} &middot; ${car.year} &middot; ${car.color} &middot; ${car.city}</div>
 
   <div class="section">
     <h2>Photos</h2>
@@ -554,7 +551,7 @@ function CarPage() {
   ${optionsList.length > 0 ? `<div class="section"><h2>Options &amp; Features</h2><div>${optionsHtml}</div></div>` : ""}
 
   <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:11px;color:#9ca3af;text-align:center;">
-    Generated by APEXAuto &middot; ${new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" })}
+    Generated by ${BRAND_NAME} &middot; ${new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" })}
   </div>
 </body>
 </html>`;
@@ -589,49 +586,6 @@ function CarPage() {
     return () => clearInterval(interval);
   }, [car.isLive, car.id, car.minRaise, bids.length, currentBid]);
 
-  // Load & poll chat messages when chat is open
-  const loadChatMessages = useCallback(async () => {
-    if (!user?.email) return;
-    try {
-      const msgs = await getChatMessages({ data: { carId: car.id, buyerEmail: user.email } });
-      setChatMessages(msgs);
-    } catch { /* silent */ }
-  }, [car.id, user?.email]);
-
-  useEffect(() => {
-    if (!showChat) return;
-    setChatLoading(true);
-    loadChatMessages().finally(() => setChatLoading(false));
-    const interval = setInterval(loadChatMessages, 5000);
-    return () => clearInterval(interval);
-  }, [showChat, loadChatMessages]);
-
-  // Auto-scroll to bottom when new messages arrive
-  useEffect(() => {
-    if (showChat) chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatMessages, showChat]);
-
-  const sendChat = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!chatMsg.trim() || !user?.email) return;
-    const text = chatMsg.trim();
-    setChatMsg("");
-    try {
-      const msg = await sendChatMessage({
-        data: {
-          carId: car.id,
-          buyerEmail: user.email,
-          buyerName: user.name ?? "Buyer",
-          senderRole: "buyer",
-          message: text,
-        },
-      });
-      setChatMessages((prev) => [...prev, msg]);
-    } catch {
-      toast.error("Failed to send message");
-    }
-  };
-
   const CAR_OPTION_LABELS: Record<string, string> = {
     sunroof: t("opt_sunroof"),
     rear_camera: t("opt_rear_camera"),
@@ -651,18 +605,36 @@ function CarPage() {
   };
 
   return (
-    <div className="min-h-screen pb-nav md:pb-0">
+    <div className="min-h-screen pb-nav">
+      <PageMeta
+        titleKey="car_page_title"
+        descriptionKey="seo_car_desc"
+        titleVars={{ title: car.title }}
+        descriptionVars={{ title: car.title, year: car.year, brand: car.brand, model: car.model }}
+      />
       <Header />
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4 md:py-8">
+      <div className="page-content max-w-7xl py-4 md:py-8">
         <div className="text-sm text-muted-foreground mb-4 md:mb-6">
           <Link to="/browse" search={{ q: "" }} className="hover:text-foreground">{t("car_back")}</Link>
           <span className="mx-2">/</span>
           <span className="text-foreground truncate">{car.title}</span>
         </div>
 
-        <div className="grid lg:grid-cols-[1.5fr_1fr] gap-6 md:gap-8">
-          {/* LEFT */}
-          <div className="space-y-6">
+        <div className="flex flex-col lg:flex-row lg:items-stretch gap-6 md:gap-8">
+          {/* MAIN — images, specs (right in RTL) */}
+          <div className="flex-1 min-w-0 space-y-6">
+            {isLight ? (
+              <SpecHotspots
+                imageSrc={galleryImages[selectedImg]}
+                alt={car.title}
+                title={car.title}
+                items={[
+                  ...(car.hp ? [{ id: "hp", label: "Horsepower", value: `${car.hp} hp`, top: "30%", left: "28%" }] : []),
+                  ...(car.engine ? [{ id: "engine", label: "Engine", value: car.engine, top: "52%", left: "62%" }] : []),
+                  ...(car.transmission ? [{ id: "trans", label: "Transmission", value: car.transmission, top: "68%", left: "40%" }] : []),
+                ]}
+              />
+            ) : (
             <div className="relative rounded-3xl overflow-hidden border border-border/60 shadow-elegant">
               <img src={galleryImages[selectedImg]} alt={car.title} width={1280} height={896} className="w-full h-auto" />
               <div className="absolute top-4 start-4 flex gap-2">
@@ -687,6 +659,7 @@ function CarPage() {
                 </button>
               </div>
             </div>
+            )}
 
             {galleryImages.length > 1 && (
               <div className="grid grid-cols-4 gap-1.5 sm:gap-3">
@@ -711,17 +684,17 @@ function CarPage() {
             )}
 
             <div>
+              {!isLight && (
+                <>
               <div className="text-xs text-muted-foreground uppercase tracking-wider">{car.brand} · {car.year} · {car.color}</div>
               <h1 className="font-display text-2xl md:text-4xl font-bold mt-1 leading-tight">{car.title}</h1>
+                </>
+              )}
+              {isLight && (
+                <p className="text-sm text-muted-foreground">{car.brand} · {car.model} · {car.year}</p>
+              )}
               <div className="flex flex-wrap gap-4 mt-3 text-sm text-muted-foreground">
                 <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {car.city}</span>
-                <Link
-                  to="/dealers/$dealerId"
-                  params={{ dealerId: encodeURIComponent(car.dealership) }}
-                  className="inline-flex items-center gap-1 hover:text-primary-glow transition-smooth"
-                >
-                  <Store className="h-3.5 w-3.5" /> {car.dealership}
-                </Link>
                 {car.isLive && (
                   <span className="inline-flex items-center gap-1 text-[var(--live)]">
                     <Radio className="h-3.5 w-3.5" /> {viewers} {t("car_watching")}
@@ -883,10 +856,11 @@ function CarPage() {
             )}
           </div>
 
-          {/* RIGHT */}
-          <div className="space-y-5 lg:sticky lg:top-20 h-fit">
+          {/* SIDEBAR — price/bid panel (left in RTL), sticks while scrolling main content */}
+          <aside className="w-full lg:w-80 xl:w-96 shrink-0 lg:self-stretch">
+            <div className={`space-y-5 lg:sticky-below-header${isLight ? " aether-glass-panel rounded-2xl p-4" : ""}`}>
             {car.isLive ? (
-              <div className="rounded-2xl glass-strong border border-primary/30 p-6 shadow-elegant">
+              <div className={isLight ? "aether-glass-panel rounded-[2rem] p-6" : "rounded-2xl glass-strong border border-primary/30 p-6 shadow-elegant"}>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs uppercase tracking-wider text-muted-foreground">{t("car_current_bid")}</span>
                   <Badge className="bg-[var(--live)] text-white border-0 animate-pulse-live gap-1">
@@ -938,19 +912,21 @@ function CarPage() {
                   {entryStatus?.status === "pending" && (
                     <div className="flex items-center gap-2 p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-xs text-yellow-400">
                       <Clock className="h-3.5 w-3.5 shrink-0" />
-                      Entry request pending admin review
+                      {t("entry_pending")}
                     </div>
                   )}
                   {entryStatus?.status === "rejected" && (
                     <div className="flex items-center gap-2 p-3 rounded-xl bg-destructive/10 border border-destructive/30 text-xs text-destructive">
                       <XCircle className="h-3.5 w-3.5 shrink-0" />
-                      Entry rejected{entryStatus.rejection_reason ? `: ${entryStatus.rejection_reason}` : ""}. Upload a new proof to try again.
+                      {entryStatus.rejection_reason
+                        ? t("entry_rejected_with_reason", { reason: entryStatus.rejection_reason })
+                        : t("entry_rejected_short")}
                     </div>
                   )}
                   {depositPaid && (
                     <div className="flex items-center gap-2 p-3 rounded-xl bg-[var(--success)]/10 border border-[var(--success)]/30 text-xs text-[var(--success)]">
                       <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                      Entry approved — you can place bids
+                      {t("entry_approved")}
                     </div>
                   )}
                   {!depositPaid && !entryStatus && (
@@ -1011,8 +987,30 @@ function CarPage() {
                   </div>
                 )}
               </div>
+            ) : car.auctionStatus === "ended_with_winner" ? (
+              <div className={isLight ? "aether-glass-panel rounded-[2rem] p-6 space-y-3" : "rounded-2xl glass-strong p-6 shadow-elegant space-y-3"}>
+                <Badge variant="outline">{t("car_auction_ended")}</Badge>
+                <div className="font-display text-3xl font-bold text-gradient-primary">{formatPrice(currentBid || car.price)}</div>
+                {user?.email && car.winnerEmail === user.email ? (
+                  <>
+                    <p className="text-sm font-medium text-[var(--success)]">{t("car_you_won")}</p>
+                    <p className="text-xs text-muted-foreground">{t("car_you_won_sub")}</p>
+                    <Button asChild className="w-full bg-gradient-primary border-0 text-primary-foreground">
+                      <Link to="/chat/$carId" params={{ carId: car.id }}>{t("car_chat_admin")}</Link>
+                    </Button>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">{t("car_winner_masked")}</p>
+                )}
+              </div>
+            ) : car.auctionStatus === "no_sale" ? (
+              <div className={isLight ? "aether-glass-panel rounded-[2rem] p-6 space-y-3" : "rounded-2xl glass-strong p-6 shadow-elegant space-y-3"}>
+                <Badge variant="outline">{t("car_auction_ended")}</Badge>
+                <p className="text-sm text-muted-foreground">{t("car_reserve_not_met")}</p>
+                <div className="font-display text-2xl font-bold">{formatPrice(car.price)}</div>
+              </div>
             ) : (
-              <div className="rounded-2xl glass-strong p-6 shadow-elegant space-y-3">
+              <div className={isLight ? "aether-glass-panel rounded-[2rem] p-6 space-y-3" : "rounded-2xl glass-strong p-6 shadow-elegant space-y-3"}>
                 <div className="text-xs uppercase tracking-wider text-muted-foreground">{t("car_buy_now_price")}</div>
                 <div className="font-display text-3xl md:text-4xl font-bold text-gradient-primary">{formatPrice(car.price)}</div>
 
@@ -1043,12 +1041,12 @@ function CarPage() {
 
                 {showContact && (
                   <div className="rounded-xl glass border border-border/40 p-4 space-y-2 text-sm">
-                    <p className="font-medium">{car.dealership}</p>
+                    <p className="font-medium">{BRAND_NAME}</p>
                     <a href="tel:+20212345678" className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-smooth">
                       <Phone className="h-3.5 w-3.5" /> +20 2 1234 5678
                     </a>
-                    <a href="mailto:info@apexauto.com" className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-smooth">
-                      <Mail className="h-3.5 w-3.5" /> info@apexauto.com
+                    <a href={`mailto:${INFO_EMAIL}`} className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-smooth">
+                      <Mail className="h-3.5 w-3.5" /> {INFO_EMAIL}
                     </a>
                   </div>
                 )}
@@ -1061,19 +1059,15 @@ function CarPage() {
                   <CircleCheck className="h-5 w-5 text-primary-foreground" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <Link
-                    to="/dealers/$dealerId"
-                    params={{ dealerId: encodeURIComponent(car.dealership) }}
-                    className="font-display font-semibold hover:text-primary-glow transition-smooth block truncate"
-                  >
-                    {car.dealership}
-                  </Link>
-                  <div className="text-xs text-muted-foreground">Verified dealer · 4.9 ★ (218 reviews)</div>
+                  <p className="font-display font-semibold truncate">{BRAND_NAME}</p>
+                  <div className="text-xs text-muted-foreground">Verified showroom</div>
                 </div>
               </div>
               <div className="flex gap-2 mt-4">
-                <Button variant="outline" className="flex-1 glass gap-2 text-xs" onClick={() => setShowChat(true)}>
-                  <MessageCircle className="h-3.5 w-3.5" /> Chat
+                <Button asChild variant="outline" className="flex-1 glass gap-2 text-xs">
+                  <Link to="/chat/$carId" params={{ carId: car.id }}>
+                    <MessageCircle className="h-3.5 w-3.5" /> {t("car_chat")}
+                  </Link>
                 </Button>
                 <Button
                   variant="outline"
@@ -1085,7 +1079,8 @@ function CarPage() {
               </div>
             </div>
 
-          </div>
+            </div>
+          </aside>
         </div>
 
         {bids.length > 0 && (
@@ -1198,10 +1193,6 @@ function CarPage() {
                 <span className="text-sm text-muted-foreground">Year · Color</span>
                 <span className="font-semibold text-sm">{car.year} · {car.color}</span>
               </div>
-              <div className="flex justify-between items-center py-2 border-b border-border/30">
-                <span className="text-sm text-muted-foreground">Dealership</span>
-                <span className="font-semibold text-sm">{car.dealership}</span>
-              </div>
               <div className="flex justify-between items-center py-2">
                 <span className="text-sm text-muted-foreground">Total Price</span>
                 <span className="font-display font-bold text-xl text-gradient-primary">{formatPrice(car.price)}</span>
@@ -1250,60 +1241,6 @@ function CarPage() {
                 <Bell className="h-4 w-4" /> Set Alert
               </Button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {showChat && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setShowChat(false)}>
-          <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" />
-          <div
-            className="relative w-full max-w-md glass-strong border border-border/60 rounded-2xl shadow-elegant flex flex-col"
-            style={{ maxHeight: "480px" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border/40">
-              <div>
-                <p className="font-display font-semibold text-sm">Chat with dealer</p>
-                <p className="text-xs text-muted-foreground">{car.dealership}</p>
-              </div>
-              <button onClick={() => setShowChat(false)} className="h-8 w-8 rounded-full glass flex items-center justify-center hover:bg-secondary/60 transition-smooth">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0" style={{ maxHeight: "280px" }}>
-              {!user?.email ? (
-                <p className="text-xs text-muted-foreground text-center py-4">Sign in to chat with the dealer.</p>
-              ) : chatLoading && chatMessages.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-4">Loading…</p>
-              ) : chatMessages.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-4">No messages yet. Send the first one!</p>
-              ) : (
-                chatMessages.map((m) => (
-                  <div key={m.id} className={`flex ${m.sender_role === "buyer" ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[80%] px-3 py-2 rounded-xl text-sm ${m.sender_role === "buyer" ? "bg-gradient-primary text-primary-foreground" : "glass border border-border/40"}`}>
-                      {m.message}
-                      <div className={`text-[10px] mt-0.5 opacity-60`}>
-                        {m.sender_role === "buyer" ? "You" : "Dealer"} · {new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-              <div ref={chatBottomRef} />
-            </div>
-            <form onSubmit={sendChat} className="flex gap-2 p-4 border-t border-border/40">
-              <input
-                value={chatMsg}
-                onChange={(e) => setChatMsg(e.target.value)}
-                placeholder={user?.email ? "Type a message…" : "Sign in to chat"}
-                disabled={!user?.email}
-                className="flex-1 bg-background/50 border border-border rounded-lg px-3 py-2 text-sm outline-none focus:border-primary disabled:opacity-50"
-              />
-              <Button type="submit" size="sm" disabled={!user?.email} className="bg-gradient-primary border-0 text-primary-foreground px-4">
-                Send
-              </Button>
-            </form>
           </div>
         </div>
       )}

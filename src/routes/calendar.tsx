@@ -10,8 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Calendar, Radio, Clock, ArrowRight, Gavel } from "lucide-react";
 import type { AppCar } from "@/lib/types";
 
+import { useLanguage } from "@/lib/language";
+import { brandPageTitle } from "@/lib/brand";
+
 export const Route = createFileRoute("/calendar")({
-  head: () => ({ meta: [{ title: "Auction Calendar — APEXAuto" }] }),
+  head: () => ({ meta: [{ title: brandPageTitle("Auction Calendar") }] }),
   loader: async () => {
     await markExpiredAuctions();
     const all = await getCarsFromDb();
@@ -23,12 +26,13 @@ export const Route = createFileRoute("/calendar")({
   component: CalendarPage,
 });
 
-function groupByDate(cars: AppCar[]): Record<string, AppCar[]> {
+function groupByDate(cars: AppCar[], isAr: boolean): Record<string, AppCar[]> {
   const groups: Record<string, AppCar[]> = {};
+  const locale = isAr ? "ar-EG" : "en-GB";
   for (const car of cars) {
     const date = car.endsAt
-      ? new Date(car.endsAt).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })
-      : "No End Date";
+      ? new Date(car.endsAt).toLocaleDateString(locale, { weekday: "long", day: "numeric", month: "long", year: "numeric" })
+      : isAr ? "بدون تاريخ انتهاء" : "No End Date";
     if (!groups[date]) groups[date] = [];
     groups[date].push(car);
   }
@@ -37,28 +41,27 @@ function groupByDate(cars: AppCar[]): Record<string, AppCar[]> {
 
 function CalendarPage() {
   const { live, upcoming } = Route.useLoaderData();
-  const grouped = groupByDate(live);
+  const { t, isAr } = useLanguage();
+  const grouped = groupByDate(live, isAr);
 
   return (
-    <div className="min-h-screen pb-nav md:pb-0">
+    <div className="min-h-screen pb-nav">
       <Header />
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
-        <div className="mb-8">
+      <div className="page-content max-w-7xl">
+        <div className="mb-6 sm:mb-8">
           <div className="flex items-center gap-2 mb-2">
             <Calendar className="h-4 w-4 text-primary-glow" />
-            <span className="text-xs uppercase tracking-[0.2em] text-primary-glow font-semibold">Schedule</span>
+            <span className="text-xs uppercase tracking-[0.2em] text-primary-glow font-semibold">{t("calendar_badge")}</span>
           </div>
-          <h1 className="font-display text-4xl font-bold">
-            Auction <span className="text-gradient-primary">Calendar</span>
-          </h1>
-          <p className="text-muted-foreground mt-2">Track live and upcoming auction end times.</p>
+          <h1 className="page-title">{t("calendar_title")}</h1>
+          <p className="text-muted-foreground mt-2 page-subtitle">{t("calendar_p")}</p>
         </div>
 
         {live.length > 0 && (
           <div className="mb-12">
             <div className="flex items-center gap-2 mb-5">
               <span className="h-2 w-2 rounded-full bg-[var(--live)] animate-pulse-live" />
-              <h2 className="font-display text-xl font-bold">{live.length} Live Now</h2>
+              <h2 className="font-display text-xl font-bold">{t("calendar_live_count", { n: live.length })}</h2>
             </div>
             {Object.entries(grouped).map(([date, cars]) => (
               <div key={date} className="mb-6">
@@ -73,7 +76,7 @@ function CalendarPage() {
                       key={car.id}
                       to="/cars/$carId"
                       params={{ carId: car.id }}
-                      className="group flex items-center gap-4 glass-strong rounded-2xl p-4 hover-lift border border-primary/20"
+                      className="group flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 glass-strong rounded-2xl p-3 sm:p-4 hover-lift border border-primary/20"
                     >
                       <div className="relative h-16 w-24 rounded-xl overflow-hidden shrink-0">
                         {car.image ? (
@@ -82,7 +85,7 @@ function CalendarPage() {
                           <div className="h-full w-full bg-secondary/40" />
                         )}
                         <Badge className="absolute top-1 start-1 bg-[var(--live)] text-white border-0 gap-0.5 text-[9px] px-1 py-0">
-                          <Radio className="h-2 w-2" /> LIVE
+                          <Radio className="h-2 w-2" /> {t("badge_live")}
                         </Badge>
                       </div>
 
@@ -95,15 +98,15 @@ function CalendarPage() {
                       </div>
 
                       {car.endsAt && (
-                        <div className="text-end shrink-0">
+                        <div className="text-start sm:text-end shrink-0">
                           <div className="text-xs text-muted-foreground flex items-center gap-1 justify-end mb-0.5">
-                            <Clock className="h-3 w-3" /> Ends in
+                            <Clock className="h-3 w-3" /> {t("auctions_ends_in")}
                           </div>
                           <CountdownTimer endsAt={car.endsAt} className="font-display font-bold text-[var(--live)]" />
                         </div>
                       )}
 
-                      <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-smooth shrink-0" />
+                      <ArrowRight className="hidden sm:block h-4 w-4 text-muted-foreground group-hover:text-foreground transition-smooth shrink-0" />
                     </Link>
                   ))}
                 </div>
@@ -115,12 +118,12 @@ function CalendarPage() {
         <div>
           <div className="flex items-center gap-2 mb-5">
             <Clock className="h-4 w-4 text-muted-foreground" />
-            <h2 className="font-display text-xl font-bold">Upcoming ({upcoming.length})</h2>
+            <h2 className="font-display text-xl font-bold">{t("calendar_upcoming", { n: upcoming.length })}</h2>
           </div>
           {upcoming.length === 0 ? (
             <div className="text-center py-16 glass-strong rounded-3xl border border-border/40">
               <Calendar className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-              <p className="text-muted-foreground">No upcoming auctions scheduled.</p>
+              <p className="text-muted-foreground">{t("calendar_none")}</p>
             </div>
           ) : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -143,7 +146,7 @@ function CalendarPage() {
                   <div className="text-xs text-muted-foreground">{car.brand} · {car.year}</div>
                   <div className="font-display font-semibold mt-0.5 truncate">{car.title}</div>
                   <div className="font-display text-sm font-bold text-gradient-primary mt-1">{formatPrice(car.price)}</div>
-                  <Badge variant="outline" className="mt-2 text-[10px] glass border-border/40">Upcoming Auction</Badge>
+                  <Badge variant="outline" className="mt-2 text-[10px] glass border-border/40">{t("badge_upcoming")}</Badge>
                 </Link>
               ))}
             </div>
@@ -152,7 +155,7 @@ function CalendarPage() {
 
         <div className="mt-10 text-center">
           <Button asChild variant="outline" className="glass">
-            <Link to="/auctions">View Live Auctions <ArrowRight className="h-4 w-4 ms-2" /></Link>
+            <Link to="/auctions">{t("calendar_view_live")} <ArrowRight className="h-4 w-4 ms-2" /></Link>
           </Button>
         </div>
       </div>

@@ -1,3 +1,5 @@
+export type AuctionStatus = "none" | "live" | "ended" | "ended_with_winner" | "no_sale" | "sold";
+
 export type AppCar = {
   id: string;
   title: string;
@@ -18,7 +20,6 @@ export type AppCar = {
   images: string[];
   videos: string[];
   documents: string[];
-  dealership: string;
   city: string;
   verified: boolean;
   hp?: number;
@@ -54,6 +55,12 @@ export type AppCar = {
   conditionNotes: Record<string, string>;
   isSold?: boolean;
   soldAt?: string | null;
+  isVisible?: boolean;
+  auctionStatus?: AuctionStatus;
+  winnerEmail?: string | null;
+  winnerName?: string | null;
+  winningBidId?: number | null;
+  endedAt?: string | null;
 };
 
 export type DbCar = {
@@ -76,7 +83,6 @@ export type DbCar = {
   images: string[] | null;
   videos: string[] | null;
   documents: string[] | null;
-  dealership: string;
   city: string;
   verified: boolean;
   hp: number | null;
@@ -112,6 +118,12 @@ export type DbCar = {
   bids_count?: number;
   is_sold?: boolean | null;
   sold_at?: string | null;
+  is_visible?: boolean | null;
+  auction_status?: AuctionStatus | null;
+  winner_email?: string | null;
+  winner_name?: string | null;
+  winning_bid_id?: number | null;
+  ended_at?: string | null;
 };
 
 export function dbCarToApp(car: DbCar): AppCar {
@@ -141,7 +153,6 @@ export function dbCarToApp(car: DbCar): AppCar {
     images: car.images ?? [],
     videos: car.videos ?? [],
     documents: car.documents ?? [],
-    dealership: car.dealership,
     city: car.city,
     verified: car.verified,
     hp: nOpt(car.hp),
@@ -177,6 +188,12 @@ export function dbCarToApp(car: DbCar): AppCar {
     conditionNotes,
     isSold: car.is_sold ?? false,
     soldAt: car.sold_at ?? null,
+    isVisible: car.is_visible !== false,
+    auctionStatus: (car.auction_status as AuctionStatus) ?? "none",
+    winnerEmail: car.winner_email ?? null,
+    winnerName: car.winner_name ?? null,
+    winningBidId: car.winning_bid_id ?? null,
+    endedAt: car.ended_at ?? null,
   };
 }
 

@@ -18,8 +18,11 @@ import {
   BarChart3,
 } from "lucide-react";
 
+import { useLanguage } from "@/lib/language";
+import { brandPageTitle } from "@/lib/brand";
+
 export const Route = createFileRoute("/sold")({
-  head: () => ({ meta: [{ title: "Sold Listings — APEXAuto" }] }),
+  head: () => ({ meta: [{ title: brandPageTitle("Sold Listings") }] }),
   loader: async () => {
     await markExpiredAuctions();
     const cars = await getSoldCarsFromDb();
@@ -30,6 +33,7 @@ export const Route = createFileRoute("/sold")({
 
 function SoldPage() {
   const { cars } = Route.useLoaderData();
+  const { t } = useLanguage();
 
   const totalValue = cars.reduce((sum, c) => sum + (c.currentBid ?? c.price), 0);
   const avgPrice = cars.length > 0 ? Math.round(totalValue / cars.length) : 0;
@@ -38,44 +42,34 @@ function SoldPage() {
     : 0;
 
   const stats = [
-    { label: "Total Sold", value: cars.length.toString(), icon: Gavel, color: "text-violet-400" },
-    { label: "Total Value", value: formatPrice(totalValue), icon: BarChart3, color: "text-emerald-400" },
-    { label: "Avg. Sale Price", value: cars.length > 0 ? formatPrice(avgPrice) : "—", icon: TrendingUp, color: "text-blue-400" },
-    { label: "Record Sale", value: cars.length > 0 ? formatPrice(highestSale) : "—", icon: Trophy, color: "text-amber-400" },
+    { label: t("sold_stat_total"), value: cars.length.toString(), icon: Gavel, color: "text-primary-glow" },
+    { label: t("sold_stat_value"), value: formatPrice(totalValue), icon: BarChart3, color: "text-success" },
+    { label: t("sold_stat_avg"), value: cars.length > 0 ? formatPrice(avgPrice) : "—", icon: TrendingUp, color: "text-primary" },
+    { label: t("sold_stat_record"), value: cars.length > 0 ? formatPrice(highestSale) : "—", icon: Trophy, color: "text-warning" },
   ];
 
   return (
-    <div className="min-h-screen pb-nav md:pb-0">
+    <div className="min-h-screen pb-nav">
       <Header />
 
       {/* ── Hero banner ── */}
       <div className="relative overflow-hidden border-b border-border/30">
-        <div
-          className="absolute inset-0 opacity-30"
-          style={{
-            background:
-              "radial-gradient(ellipse 80% 60% at 50% 0%, rgba(124,58,237,0.25) 0%, transparent 70%)",
-          }}
-        />
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12 relative">
+        <div className="absolute inset-0 opacity-30 hero-accent-orb pointer-events-none" />
+        <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 py-8 sm:py-12 relative">
           <div className="flex items-center gap-2 mb-3">
-            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/15">
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[var(--success)]/15">
+              <CheckCircle2 className="h-3.5 w-3.5 text-[var(--success)]" />
             </span>
-            <span className="text-xs uppercase tracking-[0.2em] text-emerald-400 font-semibold">
-              Auction Archive
+            <span className="text-label-caps text-[var(--success)]">
+              {t("sold_badge")}
             </span>
           </div>
-          <h1 className="font-display text-4xl md:text-5xl font-bold mb-2">
-            Sold <span className="text-gradient-primary">Listings</span>
-          </h1>
-          <p className="text-muted-foreground text-base max-w-lg">
-            Browse completed auctions, final hammer prices, and historical sale data.
-          </p>
+          <h1 className="page-title mb-2">{t("sold_title")}</h1>
+          <p className="text-muted-foreground page-subtitle max-w-lg">{t("sold_p")}</p>
         </div>
       </div>
 
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
+      <div className="page-content max-w-7xl">
 
         {/* ── Stats row ── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-10">
@@ -101,12 +95,10 @@ function SoldPage() {
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-secondary/60 mx-auto mb-4">
               <Gavel className="h-8 w-8 text-muted-foreground" />
             </div>
-            <h3 className="font-display text-xl font-semibold mb-2">No sold listings yet</h3>
-            <p className="text-muted-foreground mb-8 max-w-xs mx-auto">
-              Completed auctions will appear here once the hammer falls.
-            </p>
+            <h3 className="font-display text-xl font-semibold mb-2">{t("sold_empty_title")}</h3>
+            <p className="text-muted-foreground mb-8 max-w-xs mx-auto">{t("sold_empty_p")}</p>
             <Button asChild className="bg-gradient-primary border-0 text-primary-foreground">
-              <Link to="/auctions">View Live Auctions</Link>
+              <Link to="/auctions">{t("calendar_view_live")}</Link>
             </Button>
           </div>
         ) : (
@@ -144,7 +136,7 @@ function SoldPage() {
 
                     {/* SOLD badge */}
                     <div className="absolute top-3 start-3">
-                      <Badge className="bg-emerald-500 text-white border-0 gap-1 text-[10px] font-bold px-2 py-1 shadow-lg">
+                      <Badge className="bg-[var(--success)] text-white border-0 gap-1 text-[10px] font-bold px-2 py-1 shadow-lg">
                         <CheckCircle2 className="h-3 w-3" />
                         SOLD
                       </Badge>
@@ -177,7 +169,7 @@ function SoldPage() {
                         <div
                           className={`text-xs font-semibold px-2 py-1 rounded-lg ${
                             gain > 0
-                              ? "bg-emerald-500/25 text-emerald-300"
+                              ? "bg-[var(--success)]/25 text-[var(--success)]"
                               : "bg-red-500/25 text-red-300"
                           }`}
                         >

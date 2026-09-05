@@ -1,8 +1,16 @@
 import { createServerFn } from "@tanstack/react-start";
+import { auth, clerkClient } from "@clerk/tanstack-react-start/server";
 import { getDb } from "./db.server";
-import type { DbCar } from "./types";
+import type { DbCar, AuctionStatus } from "./types";
+import { BRAND_NAME } from "./brand";
+import { CLERK_SECRET_KEY } from "./clerk-config.server";
+import { hasPaidDeposit, markLosersRefundPending } from "./deposits.server";
+import { emitUserNotification } from "./user-notifications.server";
 
 export type { DbCar };
+
+/** Public listings — exclude sold and hidden cars */
+const PUBLIC_CAR_FILTER = `c.is_sold = 0 AND COALESCE(c.is_visible, 1) = 1`;
 
 export type CarInput = {
   id: string;
@@ -24,7 +32,6 @@ export type CarInput = {
   images: string[];
   videos: string[];
   documents: string[];
-  dealership: string;
   city: string;
   hp: number | null;
   engine: string | null;
@@ -55,12 +62,67 @@ export type CarInput = {
   license_expiry: string | null;
   car_options: string[];
   condition_notes: string | null;
+  is_visible?: boolean;
+  auction_status?: AuctionStatus;
 };
+
+async function requireBidderAuth(): Promise<{ email: string; name: string }> {
+  if (!CLERK_SECRET_KEY) throw new Error("Sign in required to bid");
+  const { userId } = await auth();
+  if (!userId) throw new Error("Sign in required to bid");
+  const client = clerkClient({ secretKey: CLERK_SECRET_KEY });
+  const user = await client.users.getUser(userId);
+  const email = user.emailAddresses[0]?.emailAddress;
+  if (!email) throw new Error("Email required to bid");
+  const name = [user.firstName, user.lastName].filter(Boolean).join(" ") || user.username || "Bidder";
+  return { email, name };
+}
+
+type TopBid = {
+  id: number;
+  user_name: string;
+  user_email: string | null;
+  amount: number;
+};
+
+async function resolveAuctionWinner(carId: string): Promise<{
+  status: AuctionStatus;
+  winnerEmail: string | null;
+  winnerName: string | null;
+  winningBidId: number | null;
+}> {
+  const db = getDb();
+  const { rows: carRows } = await db.query<{
+    current_bid: number | null;
+    reserve_price: number | null;
+  }>(`SELECT current_bid, reserve_price FROM cars WHERE id = $1`, [carId]);
+  const car = carRows[0];
+  if (!car) return { status: "no_sale", winnerEmail: null, winnerName: null, winningBidId: null };
+
+  const { rows: bidRows } = await db.query<TopBid>(
+    `SELECT id, user_name, user_email, amount FROM bids WHERE car_id = $1 ORDER BY amount DESC, created_at ASC LIMIT 1`,
+    [carId],
+  );
+  const top = bidRows[0];
+  if (!top) return { status: "no_sale", winnerEmail: null, winnerName: null, winningBidId: null };
+
+  const currentBid = Number(car.current_bid ?? top.amount);
+  const reserveMet = car.reserve_price == null || currentBid >= Number(car.reserve_price);
+  if (!reserveMet) return { status: "no_sale", winnerEmail: null, winnerName: null, winningBidId: null };
+
+  return {
+    status: "ended_with_winner",
+    winnerEmail: top.user_email,
+    winnerName: top.user_name,
+    winningBidId: top.id,
+  };
+}
 
 export type DbBid = {
   id: number;
   car_id: string;
   user_name: string;
+  user_email: string | null;
   amount: number;
   created_at: string;
 };
@@ -71,6 +133,7 @@ export const getCarsFromDb = createServerFn().handler(async (): Promise<DbCar[]>
     `SELECT c.*, COUNT(b.id) AS bids_count
      FROM cars c
      LEFT JOIN bids b ON b.car_id = c.id
+     WHERE ${PUBLIC_CAR_FILTER}
      GROUP BY c.id
      ORDER BY c.created_at DESC`
   );
@@ -83,7 +146,7 @@ export const getLiveCarsFromDb = createServerFn().handler(async (): Promise<DbCa
     `SELECT c.*, COUNT(b.id) AS bids_count
      FROM cars c
      LEFT JOIN bids b ON b.car_id = c.id
-     WHERE c.is_live = 1
+     WHERE c.is_live = 1 AND ${PUBLIC_CAR_FILTER}
      GROUP BY c.id
      ORDER BY c.created_at DESC`
   );
@@ -98,7 +161,7 @@ export const getCarFromDb = createServerFn()
       `SELECT c.*, COUNT(b.id) AS bids_count
        FROM cars c
        LEFT JOIN bids b ON b.car_id = c.id
-       WHERE c.id = $1
+       WHERE c.id = $1 AND COALESCE(c.is_visible, 1) = 1
        GROUP BY c.id`,
       [id]
     );
@@ -118,9 +181,13 @@ export const getBidsForCar = createServerFn()
   });
 
 export const placeBidInDb = createServerFn()
-  .inputValidator((input: { carId: string; amount: number; userName: string }) => input)
+  .inputValidator((input: { carId: string; amount: number }) => input)
   .handler(async ({ data }): Promise<DbBid> => {
+    const bidder = await requireBidderAuth();
     const db = getDb();
+    const paid = await hasPaidDeposit(db, bidder.email, data.carId);
+    if (!paid) throw new Error("Deposit required before bidding");
+
     const client = await db.connect();
     try {
       await client.beginTransaction();
@@ -129,19 +196,23 @@ export const placeBidInDb = createServerFn()
         current_bid: number | null;
         min_raise: number | null;
         is_live: boolean;
+        is_sold: boolean;
         reserve_price: number | null;
         ends_at: number | null;
+        title: string;
       }>(
-        `SELECT current_bid, min_raise, is_live, reserve_price, ends_at
+        `SELECT current_bid, min_raise, is_live, is_sold, reserve_price, ends_at, title
          FROM cars WHERE id = $1 FOR UPDATE`,
         [data.carId]
       );
       const car = carRows[0];
       if (!car) throw new Error("Car not found");
+      if (car.is_sold) throw new Error("This car has been sold");
       if (!car.is_live) throw new Error("Auction is not live");
       const minBid = (car.current_bid ?? 0) + (car.min_raise ?? 10000);
       if (data.amount < minBid) throw new Error(`Bid must be at least ${minBid}`);
 
+      const previousBid = car.current_bid;
       const now = Date.now();
       let newEndsAt = car.ends_at;
       if (car.ends_at && car.ends_at - now < 60000 && car.ends_at > now) {
@@ -160,10 +231,9 @@ export const placeBidInDb = createServerFn()
         );
       }
 
-      // INSERT bid — no RETURNING in MySQL, use LAST_INSERT_ID()
       await client.query(
-        `INSERT INTO bids (car_id, user_name, amount) VALUES ($1, $2, $3)`,
-        [data.carId, data.userName, data.amount]
+        `INSERT INTO bids (car_id, user_name, user_email, amount) VALUES ($1, $2, $3, $4)`,
+        [data.carId, bidder.name, bidder.email, data.amount]
       );
       const newBidId = await client.lastInsertId();
 
@@ -171,28 +241,32 @@ export const placeBidInDb = createServerFn()
         `SELECT user_name, max_amount FROM proxy_bids
          WHERE car_id = $1 AND user_name != $2 AND max_amount > $3
          ORDER BY max_amount DESC LIMIT 1`,
-        [data.carId, data.userName, data.amount]
+        [data.carId, bidder.name, data.amount]
       );
       if (proxyRows[0]) {
         const proxy = proxyRows[0];
         const proxyBidAmount = Math.min(proxy.max_amount, data.amount + (car.min_raise ?? 10000));
+        await client.query(`UPDATE cars SET current_bid = $1 WHERE id = $2`, [proxyBidAmount, data.carId]);
         await client.query(
-          `UPDATE cars SET current_bid = $1 WHERE id = $2`,
-          [proxyBidAmount, data.carId]
-        );
-        await client.query(
-          `INSERT INTO bids (car_id, user_name, amount) VALUES ($1, $2, $3)`,
-          [data.carId, proxy.user_name, proxyBidAmount]
+          `INSERT INTO bids (car_id, user_name, user_email, amount) VALUES ($1, $2, $3, $4)`,
+          [data.carId, proxy.user_name, null, proxyBidAmount]
         );
       }
 
       await client.commit();
 
-      // Fetch the inserted bid row
-      const { rows: bidRows } = await getDb().query<DbBid>(
-        `SELECT * FROM bids WHERE id = $1`,
-        [newBidId]
-      );
+      if (previousBid && previousBid < data.amount) {
+        const { rows: outbidRows } = await db.query<{ user_email: string | null }>(
+          `SELECT user_email FROM bids WHERE car_id = $1 AND amount = $2 AND user_email IS NOT NULL ORDER BY created_at DESC LIMIT 1`,
+          [data.carId, previousBid],
+        );
+        const outbidEmail = outbidRows[0]?.user_email;
+        if (outbidEmail && outbidEmail !== bidder.email) {
+          await emitUserNotification(outbidEmail, "outbid", "You were outbid", `New bid on ${car.title}`, data.carId);
+        }
+      }
+
+      const { rows: bidRows } = await getDb().query<DbBid>(`SELECT * FROM bids WHERE id = $1`, [newBidId]);
       return bidRows[0];
     } catch (err) {
       await client.rollback();
@@ -234,7 +308,7 @@ export const createCar = createServerFn()
         data.price, data.currency, data.mileage, data.fuel,
         data.transmission, data.drivetrain, data.color, data.condition, data.is_new ? 1 : 0,
         data.image_url, data.images, data.videos, data.documents,
-        data.dealership, data.city, data.hp, data.engine, data.vin, data.plate_status,
+        BRAND_NAME, data.city, data.hp, data.engine, data.vin, data.plate_status,
         data.seats, data.is_live ? 1 : 0,
         data.current_bid, data.starting_price, data.buy_now_price, data.reserve_price,
         data.min_raise, data.ends_at,
@@ -259,8 +333,20 @@ export const updateCar = createServerFn()
     if (entries.length === 0) throw new Error("Nothing to update");
 
     // Serialize arrays, convert booleans
-    const boolFields = new Set(["is_new", "is_live", "featured", "accident_history"]);
+    const boolFields = new Set(["is_new", "is_live", "featured", "accident_history", "is_sold", "is_visible"]);
     const arrayFields = new Set(["images", "videos", "documents", "car_options"]);
+
+    if (rest.is_live === true) {
+      (rest as Record<string, unknown>).auction_status = "live";
+    } else if (rest.is_live === false) {
+      const { rows: cur } = await db.query<{ auction_status: string }>(
+        `SELECT auction_status FROM cars WHERE id = $1`,
+        [id],
+      );
+      if (cur[0]?.auction_status === "live") {
+        (rest as Record<string, unknown>).auction_status = "none";
+      }
+    }
 
     const setClauses = entries.map(([k]) => {
       const col = k === "condition" ? "`condition`" : k;
@@ -288,48 +374,79 @@ export const deleteCar = createServerFn()
     await db.query(`DELETE FROM cars WHERE id = $1`, [id]);
   });
 
-export type ListingRequest = {
-  id: number;
-  name: string;
-  email: string;
-  phone: string | null;
-  brand: string;
-  model: string;
-  year: string | null;
-  price: string | null;
-  notes: string | null;
-  status: string;
-  created_at: string;
-};
-
-export const createListingRequest = createServerFn()
-  .inputValidator((input: { name: string; email: string; phone: string; brand: string; model: string; year: string; price: string; notes: string }) => input)
-  .handler(async ({ data }): Promise<ListingRequest> => {
+export const markCarAsSold = createServerFn({ method: "POST" })
+  .inputValidator((input: { id: string; salePrice?: number }) => input)
+  .handler(async ({ data }): Promise<DbCar> => {
     const db = getDb();
     await db.query(
-      `INSERT INTO listing_requests (name, email, phone, brand, model, year, price, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [data.name, data.email, data.phone || null, data.brand, data.model, data.year || null, data.price || null, data.notes || null]
+      `UPDATE cars SET is_sold = 1, is_live = 0, is_visible = 1, sold_at = NOW(),
+       auction_status = 'sold',
+       current_bid = COALESCE($1, current_bid, price) WHERE id = $2`,
+      [data.salePrice ?? null, data.id],
     );
-    const { rows } = await db.query<ListingRequest>(
-      `SELECT * FROM listing_requests WHERE id = LAST_INSERT_ID()`
+    const { rows: carRows } = await db.query<{ winner_email: string | null }>(
+      `SELECT winner_email FROM cars WHERE id = $1`,
+      [data.id],
     );
+    await markLosersRefundPending(db, data.id, carRows[0]?.winner_email ?? null);
+    const { rows } = await db.query<DbCar>(`SELECT * FROM cars WHERE id = $1`, [data.id]);
+    if (!rows[0]) throw new Error("Car not found");
     return rows[0];
   });
 
-export const getListingRequests = createServerFn().handler(async (): Promise<ListingRequest[]> => {
-  const db = getDb();
-  const { rows } = await db.query<ListingRequest>(
-    `SELECT * FROM listing_requests ORDER BY created_at DESC`
-  );
-  return rows;
-});
-
-export const updateListingRequestStatus = createServerFn()
-  .inputValidator((input: { id: number; status: string }) => input)
-  .handler(async ({ data }): Promise<void> => {
+export const markCarAsUnsold = createServerFn({ method: "POST" })
+  .inputValidator((input: { id: string; status?: AuctionStatus }) => input)
+  .handler(async ({ data }): Promise<DbCar> => {
     const db = getDb();
-    await db.query(`UPDATE listing_requests SET status = $1 WHERE id = $2`, [data.status, data.id]);
+    const status = data.status ?? "no_sale";
+    await db.query(
+      `UPDATE cars SET is_sold = 0, sold_at = NULL, is_live = 0,
+       auction_status = $2,
+       winner_email = NULL, winner_name = NULL, winning_bid_id = NULL, ended_at = NULL
+       WHERE id = $1`,
+      [data.id, status],
+    );
+    const { rows } = await db.query<DbCar>(`SELECT * FROM cars WHERE id = $1`, [data.id]);
+    if (!rows[0]) throw new Error("Car not found");
+    return rows[0];
+  });
+
+async function finalizeExpiredCar(carId: string): Promise<void> {
+  const db = getDb();
+  const result = await resolveAuctionWinner(carId);
+  await db.query(
+    `UPDATE cars SET is_live = 0, ended_at = NOW(),
+     auction_status = $2, winner_email = $3, winner_name = $4, winning_bid_id = $5
+     WHERE id = $1`,
+    [carId, result.status, result.winnerEmail, result.winnerName, result.winningBidId],
+  );
+  if (result.status === "ended_with_winner" && result.winnerEmail) {
+    const { rows: carRows } = await db.query<{ title: string }>(`SELECT title FROM cars WHERE id = $1`, [carId]);
+    await emitUserNotification(
+      result.winnerEmail,
+      "auction_won",
+      "You won the auction!",
+      `You won ${carRows[0]?.title ?? "the car"}. The admin will contact you.`,
+      carId,
+    );
+    const { rows: bidderRows } = await db.query<{ user_email: string }>(
+      `SELECT DISTINCT user_email FROM bids WHERE car_id = $1 AND user_email IS NOT NULL AND user_email != $2`,
+      [carId, result.winnerEmail],
+    );
+    for (const b of bidderRows) {
+      await emitUserNotification(b.user_email, "auction_lost", "Auction ended", "Another bidder won this auction.", carId);
+    }
+    await markLosersRefundPending(db, carId, result.winnerEmail);
+  }
+}
+
+export const resolveExpiredCar = createServerFn({ method: "POST" })
+  .inputValidator((carId: string) => carId)
+  .handler(async ({ data: carId }): Promise<DbCar> => {
+    await finalizeExpiredCar(carId);
+    const { rows } = await getDb().query<DbCar>(`SELECT * FROM cars WHERE id = $1`, [carId]);
+    if (!rows[0]) throw new Error("Car not found");
+    return rows[0];
   });
 
 export const getBidsForUser = createServerFn()
@@ -347,31 +464,17 @@ export const getBidsForUser = createServerFn()
     return rows as ReturnType<typeof getBidsForUser> extends Promise<infer T> ? T : never;
   });
 
-export const getCarsByDealership = createServerFn()
-  .inputValidator((dealership: string) => dealership)
-  .handler(async ({ data: dealership }): Promise<DbCar[]> => {
-    const db = getDb();
-    const { rows } = await db.query<DbCar & { bids_count: number }>(
-      `SELECT c.*, COUNT(b.id) AS bids_count
-       FROM cars c
-       LEFT JOIN bids b ON b.car_id = c.id
-       WHERE c.dealership = $1
-       GROUP BY c.id
-       ORDER BY c.created_at DESC`,
-      [dealership]
-    );
-    return rows.map((r) => ({ ...r, bids_count: Number(r.bids_count) }));
-  });
-
 export const markExpiredAuctions = createServerFn().handler(async (): Promise<number> => {
   const db = getDb();
   const now = Date.now();
-  const { rowCount } = await db.query(
-    `UPDATE cars SET is_live = 0, is_sold = 1, sold_at = NOW()
-     WHERE is_live = 1 AND ends_at IS NOT NULL AND ends_at < $1`,
-    [now]
+  const { rows: expired } = await db.query<{ id: string }>(
+    `SELECT id FROM cars WHERE is_live = 1 AND is_sold = 0 AND ends_at IS NOT NULL AND ends_at < $1`,
+    [now],
   );
-  return rowCount ?? 0;
+  for (const car of expired) {
+    await finalizeExpiredCar(car.id);
+  }
+  return expired.length;
 });
 
 export const getSoldCarsFromDb = createServerFn().handler(async (): Promise<DbCar[]> => {
@@ -414,19 +517,21 @@ export type ProxyBid = {
 };
 
 export const setProxyBid = createServerFn()
-  .inputValidator((input: { carId: string; userName: string; maxAmount: number }) => input)
+  .inputValidator((input: { carId: string; maxAmount: number }) => input)
   .handler(async ({ data }): Promise<ProxyBid> => {
+    const bidder = await requireBidderAuth();
     const db = getDb();
-    // MySQL ON DUPLICATE KEY UPDATE (replaces ON CONFLICT)
+    const paid = await hasPaidDeposit(db, bidder.email, data.carId);
+    if (!paid) throw new Error("Deposit required before setting proxy bid");
     await db.query(
       `INSERT INTO proxy_bids (car_id, user_name, max_amount)
        VALUES ($1, $2, $3)
        ON DUPLICATE KEY UPDATE max_amount = VALUES(max_amount), created_at = NOW()`,
-      [data.carId, data.userName, data.maxAmount]
+      [data.carId, bidder.name, data.maxAmount]
     );
     const { rows } = await db.query<ProxyBid>(
       `SELECT * FROM proxy_bids WHERE car_id = $1 AND user_name = $2`,
-      [data.carId, data.userName]
+      [data.carId, bidder.name]
     );
     return rows[0];
   });
@@ -443,8 +548,8 @@ export const getProxyBid = createServerFn()
   });
 
 export const getBidsForUserWithStatus = createServerFn()
-  .inputValidator((userName: string) => userName)
-  .handler(async ({ data: userName }): Promise<(DbBid & {
+  .inputValidator((input: { userEmail: string; userName?: string }) => input)
+  .handler(async ({ data }): Promise<(DbBid & {
     car_title: string;
     car_brand: string;
     car_year: number;
@@ -453,45 +558,49 @@ export const getBidsForUserWithStatus = createServerFn()
     is_sold: boolean;
     ends_at: number | null;
     final_bid: number | null;
+    auction_status: string | null;
     won: boolean | null;
+    bid_status: "leading" | "won_pending" | "won" | "lost" | null;
     is_leading: boolean;
     total_bids: number;
   })[]> => {
     const db = getDb();
-    // MySQL equivalent of PostgreSQL DISTINCT ON — uses ROW_NUMBER() window function (MySQL 8.0+)
+    const email = data.userEmail;
+    const name = data.userName ?? "";
     const { rows } = await db.query(
-      `SELECT id, car_id, user_name, amount, created_at,
+      `SELECT id, car_id, user_name, user_email, amount, created_at,
               car_title, car_brand, car_year, car_image,
-              is_live, is_sold, ends_at, final_bid,
+              is_live, is_sold, ends_at, final_bid, auction_status,
               CAST(is_leading AS UNSIGNED) = 1 AS is_leading,
-              total_bids,
-              CASE WHEN won = 1 THEN TRUE WHEN won = 0 THEN FALSE ELSE NULL END AS won
+              total_bids, won, bid_status
        FROM (
-         SELECT b.id, b.car_id, b.user_name, b.amount, b.created_at,
-                c.title  AS car_title,
-                c.brand  AS car_brand,
-                c.year   AS car_year,
-                c.image_url  AS car_image,
-                c.is_live,
-                c.is_sold,
-                c.ends_at,
-                c.current_bid AS final_bid,
-                (b.amount = c.current_bid) AS is_leading,
+         SELECT b.id, b.car_id, b.user_name, b.user_email, b.amount, b.created_at,
+                c.title AS car_title, c.brand AS car_brand, c.year AS car_year,
+                c.image_url AS car_image, c.is_live, c.is_sold, c.ends_at,
+                c.current_bid AS final_bid, c.auction_status,
+                (b.amount = c.current_bid AND c.is_live = 1) AS is_leading,
                 (SELECT COUNT(*) FROM bids WHERE car_id = c.id) AS total_bids,
                 CASE
-                  WHEN c.is_sold = 1
-                   AND b.amount = (SELECT MAX(amount) FROM bids WHERE car_id = c.id AND user_name = ?)
-                   AND b.amount = c.current_bid THEN 1
+                  WHEN c.is_sold = 1 AND c.winner_email = ? THEN 1
                   WHEN c.is_sold = 1 THEN 0
+                  WHEN c.auction_status = 'ended_with_winner' AND c.winner_email = ? THEN NULL
+                  WHEN c.auction_status IN ('ended','ended_with_winner','no_sale') AND c.winner_email IS NOT NULL AND c.winner_email != ? THEN 0
                   ELSE NULL
                 END AS won,
+                CASE
+                  WHEN c.is_sold = 1 AND c.winner_email = ? THEN 'won'
+                  WHEN c.auction_status = 'ended_with_winner' AND c.winner_email = ? THEN 'won_pending'
+                  WHEN c.is_live = 1 AND b.amount = c.current_bid THEN 'leading'
+                  WHEN c.auction_status IN ('ended','ended_with_winner','no_sale','sold') AND (c.winner_email IS NULL OR c.winner_email != ?) THEN 'lost'
+                  ELSE NULL
+                END AS bid_status,
                 ROW_NUMBER() OVER (PARTITION BY b.car_id ORDER BY b.amount DESC) AS rn
          FROM bids b
          JOIN cars c ON c.id = b.car_id
-         WHERE b.user_name = ?
+         WHERE b.user_email = ? OR (b.user_email IS NULL AND b.user_name = ?)
        ) ranked
        WHERE rn = 1`,
-      [userName, userName]   // userName appears twice (subquery + WHERE)
+      [email, email, email, email, email, email, email, name],
     );
     return rows.map((r) => ({
       ...r,

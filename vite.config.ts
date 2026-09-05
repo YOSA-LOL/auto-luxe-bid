@@ -3,9 +3,12 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import tsConfigPaths from "vite-tsconfig-paths";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import { VitePWA } from "vite-plugin-pwa";
+import { chatWsPlugin } from "./src/lib/vite-ws-plugin";
 
 export default defineConfig({
   plugins: [
+    chatWsPlugin(),
     tailwindcss(),
     tsConfigPaths({ projects: ["./tsconfig.json"] }),
     tanstackStart({
@@ -21,6 +24,28 @@ export default defineConfig({
       },
     }),
     react(),
+    VitePWA({
+      registerType: "autoUpdate",
+      includeAssets: ["favicon.svg"],
+      manifest: {
+        name: "Elite Drive — مزادات سيارات مميزة",
+        short_name: "Elite Drive",
+        description: "مزادات سيارات مستعملة موثقة. تصفح، زايد، واربح.",
+        theme_color: "#0a0a0f",
+        background_color: "#0a0a0f",
+        display: "standalone",
+        lang: "ar",
+        dir: "rtl",
+        start_url: "/",
+        icons: [
+          { src: "/favicon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
+          { src: "/favicon.svg", sizes: "512x512", type: "image/svg+xml", purpose: "maskable" },
+        ],
+      },
+      workbox: {
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+      },
+    }),
   ],
   optimizeDeps: {
     include: [

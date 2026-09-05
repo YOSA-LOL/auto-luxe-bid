@@ -1,5 +1,6 @@
 import mysql from "mysql2/promise";
 
+const BRAND_NAME = "Elite Drive";
 const now = Date.now();
 
 const cars = [
@@ -16,7 +17,7 @@ const cars = [
     color: "Indigo Metallic",
     condition: "Excellent",
     image: "/cars/car-1.jpg",
-    dealership: "Apex Motors Cairo",
+    dealership: BRAND_NAME,
     city: "Cairo",
     hp: 612,
     engine: "4.0L Twin-Turbo V8",
@@ -48,7 +49,7 @@ const cars = [
     color: "Fuji White",
     condition: "Excellent",
     image: "/cars/car-2.jpg",
-    dealership: "Crown Auto Group",
+    dealership: BRAND_NAME,
     city: "New Cairo",
     hp: 440,
     engine: "3.0L I6 MHEV",
@@ -80,7 +81,7 @@ const cars = [
     color: "Renaissance Red",
     condition: "Very Good",
     image: "/cars/car-3.jpg",
-    dealership: "Velocity Garage",
+    dealership: BRAND_NAME,
     city: "Alexandria",
     hp: 382,
     engine: "3.0L Turbo I6",
@@ -112,7 +113,7 @@ const cars = [
     color: "Silver Sand",
     condition: "Excellent",
     image: "/cars/car-4.jpg",
-    dealership: "Imperial Cars",
+    dealership: BRAND_NAME,
     city: "Cairo",
     hp: 563,
     engine: "6.6L Twin-Turbo V12",
@@ -137,7 +138,7 @@ const cars = [
     color: "Sublime Green",
     condition: "Very Good",
     image: "/cars/car-5.jpg",
-    dealership: "Heritage Collection",
+    dealership: BRAND_NAME,
     city: "Giza",
     hp: 425,
     engine: "7.0L V8 HEMI",
@@ -162,7 +163,7 @@ const cars = [
     color: "French Racing Blue",
     condition: "Excellent",
     image: "/cars/car-6.jpg",
-    dealership: "Apex Motors Cairo",
+    dealership: BRAND_NAME,
     city: "Cairo",
     hp: 1500,
     engine: "8.0L Quad-Turbo W16",

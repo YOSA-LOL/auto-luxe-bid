@@ -2,31 +2,20 @@ import { Link } from "@tanstack/react-router";
 import { formatPrice, formatNumber } from "@/lib/mock-data";
 import type { AppCar } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
-import { Heart, MapPin, Gauge, Fuel, CircleCheck, Radio, Car, GitCompare } from "lucide-react";
+import { Heart, MapPin, Gauge, Fuel, CircleCheck, Radio, Car } from "lucide-react";
 import { toast } from "sonner";
 import { useFavorites } from "@/lib/favorites";
 import { useLanguage } from "@/lib/language";
-import { useState, useEffect } from "react";
-import { addToCompare, removeFromCompare, isInCompare, getCompareIds } from "@/lib/compare";
+import { useThemeMode } from "@/lib/theme-mode";
+import { useState } from "react";
 
-export function CarCard({ car, showCompare }: { car: AppCar; showCompare?: boolean }) {
+export function CarCard({ car }: { car: AppCar }) {
   const live = car.isLive;
   const { isFavorited, toggle } = useFavorites();
   const liked = isFavorited(car.id);
   const { t } = useLanguage();
+  const { isLight } = useThemeMode();
   const [imgError, setImgError] = useState(false);
-  const [inCompare, setInCompare] = useState(false);
-  const [compareCount, setCompareCount] = useState(0);
-
-  useEffect(() => {
-    const update = () => {
-      setInCompare(isInCompare(car.id));
-      setCompareCount(getCompareIds().length);
-    };
-    update();
-    window.addEventListener("apex_compare_changed", update);
-    return () => window.removeEventListener("apex_compare_changed", update);
-  }, [car.id]);
 
   const handleHeart = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -35,31 +24,101 @@ export function CarCard({ car, showCompare }: { car: AppCar; showCompare?: boole
     toast.success(liked ? t("card_fav_remove") : t("card_fav_add"));
   };
 
-  const handleCompare = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (inCompare) {
-      removeFromCompare(car.id);
-      toast.info("Removed from comparison");
-    } else {
-      if (compareCount >= 3) {
-        toast.error("Maximum 3 cars can be compared at once");
-        return;
-      }
-      addToCompare(car.id);
-      toast.success("Added to comparison");
-    }
-  };
-
   const noImage = !car.image || imgError;
+  const displayPrice = formatPrice(live ? (car.currentBid ?? car.price) : car.price, car.currency);
+  const subtitle = [car.brand, car.model, car.year].filter(Boolean).join(" · ");
+
+  if (isLight) {
+    const specs = [
+      { value: `${formatNumber(car.mileage)}`, label: "km" },
+      { value: car.hp ? `${car.hp}` : car.fuel, label: car.hp ? "HP" : car.fuel },
+      { value: car.transmission, label: car.city },
+    ];
+
+    return (
+      <Link
+        to="/cars/$carId"
+        params={{ carId: car.id }}
+        className="aether-showroom-card group flex flex-col overflow-hidden rounded-[32px] transition-transform duration-300 hover:-translate-y-1"
+      >
+        <div className="relative h-48 sm:h-64 bg-[var(--surface-container)] overflow-hidden">
+          {noImage ? (
+            <div className="h-full w-full flex flex-col items-center justify-center gap-2">
+              <Car className="h-10 w-10 text-primary/30" />
+              <span className="text-label-caps text-muted-foreground">No photo</span>
+            </div>
+          ) : (
+            <img
+              src={car.image}
+              alt={car.title}
+              loading="lazy"
+              width={1280}
+              height={896}
+              onError={() => setImgError(true)}
+              className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
+            />
+          )}
+          {(live || car.verified) && (
+            <div className="absolute top-3 start-3 flex gap-1.5">
+              {live && (
+                <Badge className="bg-[var(--live)] text-white border-0 gap-1 text-[10px]">
+                  <Radio className="h-2.5 w-2.5" /> LIVE
+                </Badge>
+              )}
+              {car.verified && (
+                <Badge variant="outline" className="bg-white/90 border-[#bac9cc]/50 text-foreground gap-1 text-[10px]">
+                  <CircleCheck className="h-2.5 w-2.5 text-primary" />
+                  {t("card_verified")}
+                </Badge>
+              )}
+            </div>
+          )}
+          <div className="absolute top-3 end-3">
+            <button
+              onClick={handleHeart}
+              className={`h-8 w-8 rounded-full bg-white/90 border border-[#bac9cc]/40 flex items-center justify-center transition-smooth shadow-sm ${liked ? "text-red-500" : "text-foreground"}`}
+              aria-label={liked ? t("card_fav_remove") : t("card_fav_add")}
+            >
+              <Heart className={`h-3.5 w-3.5 ${liked ? "fill-current" : ""}`} />
+            </button>
+          </div>
+        </div>
+
+        <div className="p-5 sm:p-6 flex flex-col flex-grow">
+          <div className="mb-5">
+            <h3 className="aether-card-title font-display font-bold text-foreground line-clamp-2 leading-snug">
+              {car.title}
+            </h3>
+            <p className="aether-card-subtitle text-muted-foreground mt-1 line-clamp-1">{subtitle}</p>
+            <p className="aether-card-price text-primary font-semibold mt-2">
+              {live ? displayPrice : `${t("card_from")} ${displayPrice}`}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-5 sm:mb-6 mt-auto">
+            {specs.map((s, i) => (
+              <div key={i} className={`flex flex-col min-w-0 ${i > 0 ? "aether-spec-col" : ""}`}>
+                <span className="aether-card-spec-value font-display font-semibold text-foreground truncate">{s.value}</span>
+                <span className="aether-card-spec-label text-label-caps text-muted-foreground mt-0.5 truncate">{s.label}</span>
+              </div>
+            ))}
+          </div>
+
+          <span className="aether-view-details w-full py-3 rounded-full border text-sm text-center block transition-all duration-300">
+            {t("card_view_details")}
+          </span>
+        </div>
+      </Link>
+    );
+  }
 
   return (
     <Link
       to="/cars/$carId"
       params={{ carId: car.id }}
-      className="group relative block overflow-hidden rounded-lg md:rounded-2xl bg-gradient-card border border-border/60 hover-lift active:scale-[0.98] transition-smooth"
+      className="group relative block overflow-hidden rounded-lg md:rounded-2xl bg-gradient-card border border-border/60 hover-lift cyber-card aether-car-card active:scale-[0.98] transition-smooth shadow-card"
     >
-      <div className="relative aspect-[3/2] md:aspect-[16/11] overflow-hidden">
+      <div className="card-image-wrap relative aspect-[3/2] md:aspect-[16/11] overflow-hidden">
         {noImage ? (
           <div className="h-full w-full flex flex-col items-center justify-center gap-3 bg-gradient-to-br from-background via-card to-background/80">
             <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center">
@@ -99,7 +158,7 @@ export function CarCard({ car, showCompare }: { car: AppCar; showCompare?: boole
           )}
         </div>
 
-        <div className="absolute top-2 end-2 flex flex-col gap-1.5">
+        <div className="absolute top-2 end-2">
           <button
             onClick={handleHeart}
             className={`h-8 w-8 md:h-9 md:w-9 rounded-full glass flex items-center justify-center transition-smooth ${liked ? "text-red-500" : ""}`}
@@ -107,16 +166,6 @@ export function CarCard({ car, showCompare }: { car: AppCar; showCompare?: boole
           >
             <Heart className={`h-3.5 w-3.5 md:h-4 md:w-4 ${liked ? "fill-current" : ""}`} />
           </button>
-          {showCompare && (
-            <button
-              onClick={handleCompare}
-              className={`h-8 w-8 md:h-9 md:w-9 rounded-full glass flex items-center justify-center transition-smooth ${inCompare ? "text-primary-glow bg-primary/20" : ""}`}
-              aria-label={inCompare ? "Remove from compare" : "Add to compare"}
-              title={inCompare ? "Remove from compare" : "Add to compare"}
-            >
-              <GitCompare className="h-3.5 w-3.5 md:h-4 md:w-4" />
-            </button>
-          )}
         </div>
 
         <div className="absolute bottom-1.5 start-2 end-2">
@@ -126,7 +175,7 @@ export function CarCard({ car, showCompare }: { car: AppCar; showCompare?: boole
       </div>
 
       <div className="p-2 md:p-4 space-y-1.5 md:space-y-3">
-        <div className="flex flex-wrap gap-1.5 md:gap-3 text-[9px] md:text-xs text-muted-foreground">
+        <div className="flex flex-wrap gap-1.5 md:gap-3 text-label-caps text-muted-foreground">
           <span className="inline-flex items-center gap-0.5">
             <Gauge className="h-2 w-2 md:h-3 md:w-3" />
             {formatNumber(car.mileage)} km
@@ -140,22 +189,15 @@ export function CarCard({ car, showCompare }: { car: AppCar; showCompare?: boole
             {car.city}
           </span>
         </div>
-
-        <div className="flex items-end justify-between">
+        <div className="flex items-center justify-between gap-2">
           <div>
-            <div className="text-[8px] md:text-[10px] text-muted-foreground uppercase tracking-wider">
+            <div className="text-[9px] md:text-[10px] text-muted-foreground uppercase tracking-wider">
               {live ? t("card_current_bid") : t("card_buy_now")}
             </div>
-            <div className="font-display text-sm md:text-xl font-bold text-gradient-primary">
-              {formatPrice(live ? (car.currentBid ?? car.price) : car.price, car.currency)}
+            <div className="font-display text-sm md:text-xl font-bold text-primary-glow tabular-nums">
+              {displayPrice}
             </div>
           </div>
-          {live && (
-            <div className="text-end">
-              <div className="text-[8px] md:text-[10px] text-muted-foreground uppercase tracking-wider">{t("card_bids")}</div>
-              <div className="font-display text-xs md:text-sm font-semibold">{car.bids}</div>
-            </div>
-          )}
         </div>
       </div>
     </Link>

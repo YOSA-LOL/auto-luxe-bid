@@ -1,23 +1,26 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Home, Search, Gavel, Heart, Car } from "lucide-react";
+import { Home, Search, Gavel, Heart } from "lucide-react";
 import { useFavorites } from "@/lib/favorites";
+import { useLanguage } from "@/lib/language";
+import { useThemeMode } from "@/lib/theme-mode";
 
 const TABS = [
-  { to: "/", icon: Home, label: "Home" },
-  { to: "/browse", icon: Search, label: "Browse" },
-  { to: "/auctions", icon: Gavel, label: "Auctions" },
-  { to: "/favorites", icon: Heart, label: "Saved" },
-  { to: "/sell", icon: Car, label: "Sell" },
+  { to: "/", icon: Home, labelKey: "nav_home" as const },
+  { to: "/browse", icon: Search, labelKey: "nav_browse" as const },
+  { to: "/auctions", icon: Gavel, labelKey: "nav_auctions" as const },
+  { to: "/favorites", icon: Heart, labelKey: "nav_saved" as const },
 ] as const;
 
 export function BottomNav() {
   const { count } = useFavorites();
   const { location } = useRouterState();
+  const { t } = useLanguage();
+  const { isLight } = useThemeMode();
   const path = location.pathname;
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden">
-      <div className="glass-strong border-t border-border/40 pb-safe">
+      <div className="glass-strong border-t border-border/40 neon-header aether-dock-nav pb-safe">
         <div className="flex items-center justify-around h-16 px-2 max-w-lg mx-auto">
           {TABS.map((tab) => {
             const isActive = tab.to === "/" ? path === "/" : path.startsWith(tab.to);
@@ -27,14 +30,15 @@ export function BottomNav() {
                 key={tab.to}
                 to={tab.to}
                 {...(tab.to === "/browse" ? { search: { q: "" } } : {})}
-                className={`relative flex flex-col items-center justify-center gap-0.5 px-3 py-2 rounded-xl transition-smooth min-w-[52px] ${
+                className={`aether-bottom-tab relative flex flex-col items-center justify-center gap-0.5 px-3 py-2 rounded-xl transition-smooth min-w-[52px] ${
                   isActive
-                    ? "text-primary-glow"
+                    ? isLight ? "text-primary" : "text-primary-glow"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
+                data-active={isActive ? "true" : undefined}
               >
-                {isActive && (
-                  <span className="absolute inset-0 bg-primary/10 rounded-xl" />
+                {isActive && !isLight && (
+                  <span className="aether-tab-glow absolute inset-0 bg-primary/10 rounded-xl" />
                 )}
                 <span className="relative">
                   <tab.icon
@@ -46,8 +50,8 @@ export function BottomNav() {
                     </span>
                   )}
                 </span>
-                <span className={`text-[10px] font-medium leading-none ${isActive ? "text-primary-glow" : ""}`}>
-                  {tab.label}
+                <span className={`text-[10px] font-medium leading-none ${isActive ? (isLight ? "text-primary" : "text-primary-glow") : ""}`}>
+                  {t(tab.labelKey)}
                 </span>
               </Link>
             );

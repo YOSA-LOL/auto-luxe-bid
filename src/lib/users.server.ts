@@ -15,9 +15,10 @@ export async function ensureUserInDb(user: SyncUserInput): Promise<void> {
   if (!user.clerkId || !user.email) return;
 
   const db = getDb();
+  // Clerk OAuth users — no local password; empty string satisfies NOT NULL legacy column
   await db.query(
     `INSERT INTO users (clerk_id, name, email, password, phone)
-     VALUES ($1, $2, $3, NULL, $4)
+     VALUES ($1, $2, $3, '', $4)
      ON DUPLICATE KEY UPDATE
        name     = VALUES(name),
        clerk_id = COALESCE(VALUES(clerk_id), clerk_id),

@@ -1,6 +1,6 @@
 export type AppNotification = {
   id: string;
-  type: "outbid" | "auction_ending" | "auction_won" | "auction_lost" | "price_alert" | "new_listing" | "entry_submitted" | "entry_approved" | "entry_rejected";
+  type: "outbid" | "auction_ending" | "auction_won" | "auction_lost" | "price_alert" | "new_listing" | "entry_submitted" | "entry_approved" | "entry_rejected" | "broadcast";
   title: string;
   body: string;
   carId?: string;
@@ -51,4 +51,26 @@ export function clearNotifications() {
 
 export function getUnreadCount(): number {
   return getNotifications().filter((n) => !n.isRead).length;
+}
+
+const BROADCAST_SEEN_KEY = "apex_broadcast_seen";
+
+/** Merge server broadcasts into local notifications (once per broadcast id). */
+export function syncBroadcastNotifications(
+  broadcasts: { id: number; title: string; body: string }[],
+) {
+  if (typeof window === "undefined" || broadcasts.length === 0) return;
+  let seen: number[] = [];
+  try {
+    seen = JSON.parse(localStorage.getItem(BROADCAST_SEEN_KEY) ?? "[]");
+  } catch {
+    seen = [];
+  }
+  const seenSet = new Set(seen);
+  for (const b of broadcasts) {
+    if (seenSet.has(b.id)) continue;
+    addNotification({ type: "broadcast", title: b.title, body: b.body });
+    seenSet.add(b.id);
+  }
+  localStorage.setItem(BROADCAST_SEEN_KEY, JSON.stringify([...seenSet]));
 }

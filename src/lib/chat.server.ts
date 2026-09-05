@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getDb } from "./db.server";
+import { broadcastChatMessage } from "./ws-hub";
 
 export type ChatMessage = {
   id: number;
@@ -42,7 +43,13 @@ export const sendChatMessage = createServerFn()
     const { rows } = await db.query<ChatMessage>(
       `SELECT * FROM chat_messages WHERE id = LAST_INSERT_ID()`
     );
-    return rows[0];
+    const msg = rows[0];
+    try {
+      broadcastChatMessage(data.carId, data.buyerEmail, msg);
+    } catch {
+      /* WebSocket hub optional in some runtimes */
+    }
+    return msg;
   });
 
 /** Get messages for one conversation (buyer view) */

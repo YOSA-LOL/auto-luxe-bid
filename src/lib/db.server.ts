@@ -10,6 +10,7 @@
  *  - insertAndReturnId() for INSERT + LAST_INSERT_ID() pattern
  */
 
+import type { ExecuteValues } from "mysql2";
 import type { Pool, PoolConnection, RowDataPacket, ResultSetHeader } from "mysql2/promise";
 
 // Columns stored as JSON in MySQL (were TEXT[] in Postgres)
@@ -48,12 +49,81 @@ function convertSql(sql: string): string {
   return sql.replace(/\$\d+/g, "?");
 }
 
-// ── Pool singleton ────────────────────────────────────────────────────────────
+// ── Pool singleton (globalThis survives Vite HMR reloads) ─────────────────────
 
-let _pool: Pool | null = null;
+declare global {
+  // eslint-disable-next-line no-var
+  var __apex_mysql_pool__: Pool | undefined;
+  // eslint-disable-next-line no-var
+  var __apex_schema_ready__: Promise<void> | undefined;
+}
+
+async function columnExists(conn: PoolConnection, table: string, column: string): Promise<boolean> {
+  const [cols] = await conn.query<RowDataPacket[]>(
+    `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+    [table, column],
+  );
+  return cols.length > 0;
+}
+
+async function addColumnIfMissing(conn: PoolConnection, table: string, column: string, definition: string): Promise<void> {
+  if (await columnExists(conn, table, column)) return;
+  await conn.query(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  console.log(`[db] Added ${table}.${column}`);
+}
+
+async function ensureCarsSchema(pool: Pool): Promise<void> {
+  const conn = await pool.getConnection();
+  try {
+    await addColumnIfMissing(conn, "cars", "is_visible", "TINYINT(1) NOT NULL DEFAULT 1 AFTER sold_at");
+    await addColumnIfMissing(conn, "cars", "auction_status", "ENUM('none','live','ended','ended_with_winner','no_sale','sold') NOT NULL DEFAULT 'none' AFTER is_visible");
+    await addColumnIfMissing(conn, "cars", "winner_email", "VARCHAR(255) NULL AFTER auction_status");
+    await addColumnIfMissing(conn, "cars", "winner_name", "VARCHAR(255) NULL AFTER winner_email");
+    await addColumnIfMissing(conn, "cars", "winning_bid_id", "INT NULL AFTER winner_name");
+    await addColumnIfMissing(conn, "cars", "ended_at", "DATETIME(3) NULL AFTER winning_bid_id");
+    await addColumnIfMissing(conn, "bids", "user_email", "VARCHAR(255) NULL AFTER user_name");
+    await addColumnIfMissing(conn, "deposits", "instapay_number", "VARCHAR(255) NULL AFTER amount");
+    await addColumnIfMissing(conn, "deposits", "refund_status", "ENUM('none','pending','refunded') NOT NULL DEFAULT 'none' AFTER instapay_number");
+    await addColumnIfMissing(conn, "deposits", "refund_amount", "DECIMAL(15,2) NULL AFTER refund_status");
+    await addColumnIfMissing(conn, "deposits", "refunded_at", "DATETIME(3) NULL AFTER refund_amount");
+    await addColumnIfMissing(conn, "deposits", "approved_at", "DATETIME(3) NULL AFTER refunded_at");
+
+    await conn.query(`CREATE TABLE IF NOT EXISTS expenses (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      title VARCHAR(255) NOT NULL,
+      category VARCHAR(100),
+      amount DECIMAL(15,2) NOT NULL,
+      expense_date DATE NOT NULL,
+      notes TEXT,
+      created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+    await conn.query(`CREATE TABLE IF NOT EXISTS user_notifications (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      user_email VARCHAR(255) NOT NULL,
+      type VARCHAR(50) NOT NULL,
+      title VARCHAR(255) NOT NULL,
+      body TEXT,
+      car_id VARCHAR(255),
+      read_at DATETIME(3) NULL,
+      created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+      INDEX user_notifications_email_idx (user_email)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+    try {
+      await conn.query(`CREATE INDEX bids_car_amount_idx ON bids (car_id, amount DESC)`);
+    } catch {
+      /* index may already exist */
+    }
+  } finally {
+    conn.release();
+  }
+}
 
 export async function getMysqlPool(): Promise<Pool> {
-  if (_pool) return _pool;
+  if (globalThis.__apex_mysql_pool__) return globalThis.__apex_mysql_pool__;
+
   const mysql = await import("mysql2/promise");
   const url = process.env.DATABASE_URL ?? "mysql://root@127.0.0.1:3306/car_showroom";
 
@@ -71,10 +141,13 @@ export async function getMysqlPool(): Promise<Pool> {
     useSsl = sslMode === "required" || sslMode === "true" || sslMode === "1";
   } catch { /* keep defaults */ }
 
-  _pool = mysql.createPool({
+  const pool = mysql.createPool({
     host, port, user, password, database,
     waitForConnections: true,
-    connectionLimit: 10,
+    connectionLimit: 5,
+    maxIdle: 5,
+    idleTimeout: 30_000,
+    enableKeepAlive: true,
     charset: "utf8mb4",
     ...(useSsl ? { ssl: { rejectUnauthorized: false } } : {}),
     typeCast(field, next) {
@@ -86,7 +159,13 @@ export async function getMysqlPool(): Promise<Pool> {
       return next();
     },
   });
-  return _pool;
+
+  globalThis.__apex_mysql_pool__ = pool;
+  if (!globalThis.__apex_schema_ready__) {
+    globalThis.__apex_schema_ready__ = ensureCarsSchema(pool);
+  }
+  await globalThis.__apex_schema_ready__;
+  return pool;
 }
 
 // ── Shared result type ────────────────────────────────────────────────────────
@@ -123,7 +202,7 @@ export class DbClient {
   async rollback(): Promise<void>         { await this.conn.rollback(); }
 
   async query<T = Row>(sql: string, params: unknown[] = []): Promise<QueryResult<T>> {
-    return runQuery<T>((s, p) => this.conn.execute(s, p), sql, params);
+    return runQuery<T>((s, p) => this.conn.execute(s, p as ExecuteValues), sql, params);
   }
 
   /** Returns the auto-generated ID from the last INSERT */
@@ -137,10 +216,15 @@ export class DbClient {
 
 // ── Pool wrapper ──────────────────────────────────────────────────────────────
 
+declare global {
+  // eslint-disable-next-line no-var
+  var __apex_db_pool__: DbPool | undefined;
+}
+
 export class DbPool {
   async query<T = Row>(sql: string, params: unknown[] = []): Promise<QueryResult<T>> {
     const pool = await getMysqlPool();
-    return runQuery<T>((s, p) => pool.execute(s, p), sql, params);
+    return runQuery<T>((s, p) => pool.execute(s, p as ExecuteValues), sql, params);
   }
 
   async connect(): Promise<DbClient> {
@@ -153,7 +237,20 @@ export class DbPool {
   async end(): Promise<void> {}
 }
 
-/** Get a DbPool instance */
+/** Get a shared DbPool instance */
 export function getDb(): DbPool {
-  return new DbPool();
+  if (!globalThis.__apex_db_pool__) {
+    globalThis.__apex_db_pool__ = new DbPool();
+  }
+  return globalThis.__apex_db_pool__;
+}
+
+// Release MySQL connections on Vite HMR reload (prevents "Too many connections")
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    void globalThis.__apex_mysql_pool__?.end().catch(() => {});
+    globalThis.__apex_mysql_pool__ = undefined;
+    globalThis.__apex_db_pool__ = undefined;
+    globalThis.__apex_schema_ready__ = undefined;
+  });
 }

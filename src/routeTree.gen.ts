@@ -14,14 +14,13 @@ import { Route as AccountRouteImport } from './routes/account'
 import { Route as AuctionsRouteImport } from './routes/auctions'
 import { Route as BrowseRouteImport } from './routes/browse'
 import { Route as CalendarRouteImport } from './routes/calendar'
-import { Route as CompareRouteImport } from './routes/compare'
-import { Route as CreateOrganizationRouteImport } from './routes/create-organization'
 import { Route as FavoritesRouteImport } from './routes/favorites'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as OpsX7k9m2RouteImport } from './routes/ops-x7k9m2'
-import { Route as SellRouteImport } from './routes/sell'
 import { Route as SoldRouteImport } from './routes/sold'
 import { Route as CarsCarIdRouteImport } from './routes/cars.$carId'
+import { Route as ChatCarIdRouteImport } from './routes/chat.$carId'
+import { Route as OpsX7k9m2ChatRouteImport } from './routes/ops-x7k9m2_.chat'
 import { Route as SignInSplatRouteImport } from './routes/sign-in.$'
 import { Route as SignUpSplatRouteImport } from './routes/sign-up.$'
 
@@ -50,16 +49,6 @@ const CalendarRoute = CalendarRouteImport.update({
   path: '/calendar',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CompareRoute = CompareRouteImport.update({
-  id: '/compare',
-  path: '/compare',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CreateOrganizationRoute = CreateOrganizationRouteImport.update({
-  id: '/create-organization',
-  path: '/create-organization',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const FavoritesRoute = FavoritesRouteImport.update({
   id: '/favorites',
   path: '/favorites',
@@ -75,11 +64,6 @@ const OpsX7k9m2Route = OpsX7k9m2RouteImport.update({
   path: '/ops-x7k9m2',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SellRoute = SellRouteImport.update({
-  id: '/sell',
-  path: '/sell',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SoldRoute = SoldRouteImport.update({
   id: '/sold',
   path: '/sold',
@@ -88,6 +72,16 @@ const SoldRoute = SoldRouteImport.update({
 const CarsCarIdRoute = CarsCarIdRouteImport.update({
   id: '/cars/$carId',
   path: '/cars/$carId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChatCarIdRoute = ChatCarIdRouteImport.update({
+  id: '/chat/$carId',
+  path: '/chat/$carId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OpsX7k9m2ChatRoute = OpsX7k9m2ChatRouteImport.update({
+  id: '/ops-x7k9m2_/chat',
+  path: '/ops-x7k9m2/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SignInSplatRoute = SignInSplatRouteImport.update({
@@ -107,14 +101,13 @@ export interface FileRoutesByFullPath {
   '/auctions': typeof AuctionsRoute
   '/browse': typeof BrowseRoute
   '/calendar': typeof CalendarRoute
-  '/compare': typeof CompareRoute
-  '/create-organization': typeof CreateOrganizationRoute
   '/favorites': typeof FavoritesRoute
   '/login': typeof LoginRoute
   '/ops-x7k9m2': typeof OpsX7k9m2Route
-  '/sell': typeof SellRoute
   '/sold': typeof SoldRoute
   '/cars/$carId': typeof CarsCarIdRoute
+  '/chat/$carId': typeof ChatCarIdRoute
+  '/ops-x7k9m2/chat': typeof OpsX7k9m2ChatRoute
   '/sign-in/$': typeof SignInSplatRoute
   '/sign-up/$': typeof SignUpSplatRoute
 }
@@ -124,14 +117,13 @@ export interface FileRoutesByTo {
   '/auctions': typeof AuctionsRoute
   '/browse': typeof BrowseRoute
   '/calendar': typeof CalendarRoute
-  '/compare': typeof CompareRoute
-  '/create-organization': typeof CreateOrganizationRoute
   '/favorites': typeof FavoritesRoute
   '/login': typeof LoginRoute
   '/ops-x7k9m2': typeof OpsX7k9m2Route
-  '/sell': typeof SellRoute
   '/sold': typeof SoldRoute
   '/cars/$carId': typeof CarsCarIdRoute
+  '/chat/$carId': typeof ChatCarIdRoute
+  '/ops-x7k9m2/chat': typeof OpsX7k9m2ChatRoute
   '/sign-in/$': typeof SignInSplatRoute
   '/sign-up/$': typeof SignUpSplatRoute
 }
@@ -142,14 +134,13 @@ export interface FileRoutesById {
   '/auctions': typeof AuctionsRoute
   '/browse': typeof BrowseRoute
   '/calendar': typeof CalendarRoute
-  '/compare': typeof CompareRoute
-  '/create-organization': typeof CreateOrganizationRoute
   '/favorites': typeof FavoritesRoute
   '/login': typeof LoginRoute
   '/ops-x7k9m2': typeof OpsX7k9m2Route
-  '/sell': typeof SellRoute
   '/sold': typeof SoldRoute
   '/cars/$carId': typeof CarsCarIdRoute
+  '/chat/$carId': typeof ChatCarIdRoute
+  '/ops-x7k9m2_/chat': typeof OpsX7k9m2ChatRoute
   '/sign-in/$': typeof SignInSplatRoute
   '/sign-up/$': typeof SignUpSplatRoute
 }
@@ -161,14 +152,13 @@ export interface FileRouteTypes {
     | '/auctions'
     | '/browse'
     | '/calendar'
-    | '/compare'
-    | '/create-organization'
     | '/favorites'
     | '/login'
     | '/ops-x7k9m2'
-    | '/sell'
     | '/sold'
     | '/cars/$carId'
+    | '/chat/$carId'
+    | '/ops-x7k9m2/chat'
     | '/sign-in/$'
     | '/sign-up/$'
   fileRoutesByTo: FileRoutesByTo
@@ -178,14 +168,13 @@ export interface FileRouteTypes {
     | '/auctions'
     | '/browse'
     | '/calendar'
-    | '/compare'
-    | '/create-organization'
     | '/favorites'
     | '/login'
     | '/ops-x7k9m2'
-    | '/sell'
     | '/sold'
     | '/cars/$carId'
+    | '/chat/$carId'
+    | '/ops-x7k9m2/chat'
     | '/sign-in/$'
     | '/sign-up/$'
   id:
@@ -195,14 +184,13 @@ export interface FileRouteTypes {
     | '/auctions'
     | '/browse'
     | '/calendar'
-    | '/compare'
-    | '/create-organization'
     | '/favorites'
     | '/login'
     | '/ops-x7k9m2'
-    | '/sell'
     | '/sold'
     | '/cars/$carId'
+    | '/chat/$carId'
+    | '/ops-x7k9m2_/chat'
     | '/sign-in/$'
     | '/sign-up/$'
   fileRoutesById: FileRoutesById
@@ -213,14 +201,13 @@ export interface RootRouteChildren {
   AuctionsRoute: typeof AuctionsRoute
   BrowseRoute: typeof BrowseRoute
   CalendarRoute: typeof CalendarRoute
-  CompareRoute: typeof CompareRoute
-  CreateOrganizationRoute: typeof CreateOrganizationRoute
   FavoritesRoute: typeof FavoritesRoute
   LoginRoute: typeof LoginRoute
   OpsX7k9m2Route: typeof OpsX7k9m2Route
-  SellRoute: typeof SellRoute
   SoldRoute: typeof SoldRoute
   CarsCarIdRoute: typeof CarsCarIdRoute
+  ChatCarIdRoute: typeof ChatCarIdRoute
+  OpsX7k9m2ChatRoute: typeof OpsX7k9m2ChatRoute
   SignInSplatRoute: typeof SignInSplatRoute
   SignUpSplatRoute: typeof SignUpSplatRoute
 }
@@ -262,20 +249,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CalendarRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/compare': {
-      id: '/compare'
-      path: '/compare'
-      fullPath: '/compare'
-      preLoaderRoute: typeof CompareRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/create-organization': {
-      id: '/create-organization'
-      path: '/create-organization'
-      fullPath: '/create-organization'
-      preLoaderRoute: typeof CreateOrganizationRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/favorites': {
       id: '/favorites'
       path: '/favorites'
@@ -297,13 +270,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OpsX7k9m2RouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/sell': {
-      id: '/sell'
-      path: '/sell'
-      fullPath: '/sell'
-      preLoaderRoute: typeof SellRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/sold': {
       id: '/sold'
       path: '/sold'
@@ -316,6 +282,20 @@ declare module '@tanstack/react-router' {
       path: '/cars/$carId'
       fullPath: '/cars/$carId'
       preLoaderRoute: typeof CarsCarIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/chat/$carId': {
+      id: '/chat/$carId'
+      path: '/chat/$carId'
+      fullPath: '/chat/$carId'
+      preLoaderRoute: typeof ChatCarIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ops-x7k9m2_/chat': {
+      id: '/ops-x7k9m2_/chat'
+      path: '/ops-x7k9m2/chat'
+      fullPath: '/ops-x7k9m2/chat'
+      preLoaderRoute: typeof OpsX7k9m2ChatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign-in/$': {
@@ -341,14 +321,13 @@ const rootRouteChildren: RootRouteChildren = {
   AuctionsRoute: AuctionsRoute,
   BrowseRoute: BrowseRoute,
   CalendarRoute: CalendarRoute,
-  CompareRoute: CompareRoute,
-  CreateOrganizationRoute: CreateOrganizationRoute,
   FavoritesRoute: FavoritesRoute,
   LoginRoute: LoginRoute,
   OpsX7k9m2Route: OpsX7k9m2Route,
-  SellRoute: SellRoute,
   SoldRoute: SoldRoute,
   CarsCarIdRoute: CarsCarIdRoute,
+  ChatCarIdRoute: ChatCarIdRoute,
+  OpsX7k9m2ChatRoute: OpsX7k9m2ChatRoute,
   SignInSplatRoute: SignInSplatRoute,
   SignUpSplatRoute: SignUpSplatRoute,
 }

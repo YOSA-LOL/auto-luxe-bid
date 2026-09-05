@@ -3,21 +3,16 @@ import { useState, useEffect } from "react";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { getCarsFromDb, getLiveCarsFromDb, markExpiredAuctions } from "@/lib/cars.server";
-import { dbCarToApp } from "@/lib/types";
+import { dbCarToApp, type AppCar } from "@/lib/types";
 import { formatPrice } from "@/lib/mock-data";
 import { CountdownTimer } from "@/components/CountdownTimer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Radio, Users, Gavel, ArrowRight, Flame, CheckCircle2, Calendar } from "lucide-react";
+import { Radio, Users, Gavel, ArrowRight, Flame, CheckCircle2, Calendar, MapPin } from "lucide-react";
 import { useLanguage } from "@/lib/language";
+import { PageMeta } from "@/components/PageMeta";
 
 export const Route = createFileRoute("/auctions")({
-  head: () => ({
-    meta: [
-      { title: "Live Auctions — APEXAuto" },
-      { name: "description", content: "Join live used car auctions in real time." },
-    ],
-  }),
   loader: async () => {
     await markExpiredAuctions();
     const [liveCars, allCars] = await Promise.all([getLiveCarsFromDb(), getCarsFromDb()]);
@@ -29,22 +24,78 @@ export const Route = createFileRoute("/auctions")({
   component: AuctionsPage,
 });
 
+function AuctionRow({ c, now, t }: { c: AppCar; now: number; t: (k: string) => string }) {
+  const isExpired = c.endsAt != null && now > 0 && c.endsAt < now;
+  return (
+    <Link
+      to="/cars/$carId"
+      params={{ carId: c.id }}
+      className="group relative grid md:grid-cols-[260px_1fr_auto] gap-5 items-center glass-strong rounded-2xl p-4 hover-lift"
+    >
+      <div className="relative aspect-[16/11] rounded-xl overflow-hidden">
+        <img src={c.image} alt={c.title} loading="lazy" width={1280} height={896} className="h-full w-full object-cover" />
+        {isExpired ? (
+          <Badge className="absolute top-2 start-2 bg-[var(--success)] text-white border-0 gap-1">
+            <CheckCircle2 className="h-3 w-3" /> SOLD
+          </Badge>
+        ) : (
+          <Badge className="absolute top-2 start-2 bg-[var(--live)] text-white border-0 animate-pulse-live gap-1">
+            <Radio className="h-3 w-3" /> LIVE
+          </Badge>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <div className="text-xs text-muted-foreground uppercase tracking-wider">{c.brand} · {c.year}</div>
+        <h3 className="font-display text-xl font-bold">{c.title}</h3>
+        <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> {c.viewers} {t("car_watching")}</span>
+          <span className="inline-flex items-center gap-1.5"><Flame className="h-3.5 w-3.5 text-orange-400" /> {c.bids} {t("auctions_bids")}</span>
+          <span className="inline-flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" /> {c.city}</span>
+        </div>
+        {c.endsAt && (
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-muted-foreground">{isExpired ? "Ended" : t("auctions_ends_in")}</span>
+            {!isExpired && <CountdownTimer endsAt={c.endsAt} className="font-display font-semibold text-[var(--live)]" />}
+          </div>
+        )}
+      </div>
+
+      <div className="text-start md:text-end space-y-3">
+        <div>
+          <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
+            {isExpired ? "Final Price" : t("card_current_bid")}
+          </div>
+          <div className="font-display text-2xl font-bold text-gradient-primary">{formatPrice(c.currentBid ?? c.price)}</div>
+          {!isExpired && <div className="text-xs text-muted-foreground mt-1">Min +{formatPrice(c.minRaise)}</div>}
+        </div>
+        {!isExpired && (
+          <Button className="bg-gradient-primary border-0 text-primary-foreground shadow-glow w-full sm:w-auto">
+            <Gavel className="h-4 w-4" /> {t("auctions_bid_now")}
+          </Button>
+        )}
+      </div>
+    </Link>
+  );
+}
+
 function AuctionsPage() {
   const { live, upcoming } = Route.useLoaderData();
   const { t } = useLanguage();
-  // Defer Date.now() to client-side to avoid SSR/client hydration mismatch.
-  // On first render (SSR and initial client render) treat nothing as expired,
-  // then useEffect corrects it immediately after hydration.
   const [now, setNow] = useState<number>(0);
   useEffect(() => {
     setNow(Date.now());
   }, []);
 
+  const endingSoon = live.filter((c) => c.endsAt != null && now > 0 && c.endsAt - now < 60 * 60 * 1000 && c.endsAt > now);
+  const liveRest = live.filter((c) => !endingSoon.some((e) => e.id === c.id));
+
   return (
-    <div className="min-h-screen pb-nav md:pb-0">
+    <div className="min-h-screen pb-nav">
+      <PageMeta titleKey="auctions_title" descriptionKey="seo_auctions_desc" />
       <Header />
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
-        <div className="flex items-center gap-2 mb-2">
+      <div className="page-content max-w-7xl">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
           <span className="h-2 w-2 rounded-full bg-[var(--live)] animate-pulse-live" />
           <span className="text-xs uppercase tracking-[0.2em] text-[var(--live)] font-semibold">{live.length} {t("live_now")}</span>
         </div>
@@ -53,10 +104,10 @@ function AuctionsPage() {
 
         <div className="flex gap-3 mt-5">
           <Button asChild variant="outline" className="glass gap-2">
-            <Link to="/calendar"><Calendar className="h-4 w-4" /> Auction Calendar</Link>
+            <Link to="/calendar"><Calendar className="h-4 w-4" /> {t("auctions_calendar")}</Link>
           </Button>
           <Button asChild variant="outline" className="glass gap-2">
-            <Link to="/sold"><CheckCircle2 className="h-4 w-4" /> Sold Listings</Link>
+            <Link to="/sold"><CheckCircle2 className="h-4 w-4" /> {t("auctions_sold_link")}</Link>
           </Button>
         </div>
 
@@ -70,63 +121,28 @@ function AuctionsPage() {
             </Button>
           </div>
         ) : (
-          <div className="mt-10 space-y-4">
-            {live.map((c) => {
-              const isExpired = c.endsAt != null && c.endsAt < now;
-              return (
-                <Link
-                  key={c.id}
-                  to="/cars/$carId"
-                  params={{ carId: c.id }}
-                  className="group relative grid md:grid-cols-[260px_1fr_auto] gap-5 items-center glass-strong rounded-2xl p-4 hover-lift"
-                >
-                  <div className="relative aspect-[16/11] rounded-xl overflow-hidden">
-                    <img src={c.image} alt={c.title} loading="lazy" width={1280} height={896} className="h-full w-full object-cover" />
-                    {isExpired ? (
-                      <Badge className="absolute top-2 start-2 bg-[var(--success)] text-white border-0 gap-1">
-                        <CheckCircle2 className="h-3 w-3" /> SOLD
-                      </Badge>
-                    ) : (
-                      <Badge className="absolute top-2 start-2 bg-[var(--live)] text-white border-0 animate-pulse-live gap-1">
-                        <Radio className="h-3 w-3" /> LIVE
-                      </Badge>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="text-xs text-muted-foreground uppercase tracking-wider">{c.brand} · {c.year}</div>
-                    <h3 className="font-display text-xl font-bold">{c.title}</h3>
-                    <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-                      <span className="inline-flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> {c.viewers} {t("car_watching")}</span>
-                      <span className="inline-flex items-center gap-1.5"><Flame className="h-3.5 w-3.5 text-orange-400" /> {c.bids} {t("auctions_bids")}</span>
-                      <span className="inline-flex items-center gap-1.5">{c.dealership}</span>
-                    </div>
-                    {c.endsAt && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="text-muted-foreground">{isExpired ? "Ended" : t("auctions_ends_in")}</span>
-                        {!isExpired && <CountdownTimer endsAt={c.endsAt} className="font-display font-semibold text-[var(--live)]" />}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="text-end space-y-3">
-                    <div>
-                      <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
-                        {isExpired ? "Final Price" : t("card_current_bid")}
-                      </div>
-                      <div className="font-display text-2xl font-bold text-gradient-primary">{formatPrice(c.currentBid ?? c.price)}</div>
-                      {!isExpired && <div className="text-xs text-muted-foreground mt-1">Min +{formatPrice(c.minRaise)}</div>}
-                    </div>
-                    {!isExpired && (
-                      <Button className="bg-gradient-primary border-0 text-primary-foreground shadow-glow w-full sm:w-auto">
-                        <Gavel className="h-4 w-4" /> {t("auctions_bid_now")}
-                      </Button>
-                    )}
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
+          <>
+            {endingSoon.length > 0 && (
+              <div className="mt-10">
+                <h2 className="font-display text-xl font-bold mb-4 flex items-center gap-2">
+                  <Flame className="h-5 w-5 text-orange-400" /> Ending soon
+                </h2>
+                <div className="space-y-4">
+                  {endingSoon.map((c) => (
+                    <AuctionRow key={c.id} c={c} now={now} t={t} />
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="mt-10">
+              <h2 className="font-display text-xl font-bold mb-4">{t("live_now")}</h2>
+              <div className="space-y-4">
+                {(endingSoon.length ? liveRest : live).map((c) => (
+                  <AuctionRow key={c.id} c={c} now={now} t={t} />
+                ))}
+              </div>
+            </div>
+          </>
         )}
 
         {upcoming.length > 0 && (

@@ -1,24 +1,22 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { createFileRoute, Link, useRouter, useNavigate, redirect } from "@tanstack/react-router";
 import { useUser } from "@clerk/tanstack-react-start";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import {
-  getCarsFromDb, getLiveCarsFromDb, createCar, updateCar, deleteCar,
-  getListingRequests, updateListingRequestStatus,
-  getUsersFromDb, getSoldCarsFromDb, markExpiredAuctions,
-  type DbCar, type CarInput, type ListingRequest, type DbUser,
+  getLiveCarsFromDb, createCar, updateCar, deleteCar, markCarAsSold, markCarAsUnsold, resolveExpiredCar,
+  markExpiredAuctions,
+  type DbCar, type CarInput,
 } from "@/lib/cars.server";
 import { getUser } from "@/lib/auth.server";
-import { getAdminEmails } from "@/lib/admin-access.server";
-import { getAdminChats, sendChatMessage, type ChatConversation } from "@/lib/chat.server";
+import { resolveClientIsAdmin } from "@/lib/admin-access";
+import { getAdminChats, type ChatConversation } from "@/lib/chat.server";
 import {
-  getAuctionEntryRequests, updateAuctionEntryStatus,
-  getAuctionDepositSettings, updateAuctionDepositSettings,
+  getAuctionDepositSettings,
   getHeroCarPin, setHeroCarPin,
-  type AuctionEntryRequest, type DepositSettings,
+  type DepositSettings,
 } from "@/lib/auction-entry.server";
-import { uploadImage } from "@/lib/upload.server";
+import { uploadImage, uploadDocument } from "@/lib/upload.server";
 import { dbCarToApp, generateCarId } from "@/lib/types";
 import { formatPrice, formatNumber } from "@/lib/mock-data";
 import { Badge } from "@/components/ui/badge";
@@ -29,14 +27,28 @@ import {
   ShieldCheck, Activity, Download, Plus, X, Edit2, Trash2,
   Radio, ChevronDown, ChevronUp, Star, Clock, ImagePlus,
   FileText, Video, AlertTriangle, Wrench, Zap, Shield,
-  Timer, Eye, RotateCcw, Upload, MessageCircle, Send,
+  Timer, RotateCcw, Upload, MessageCircle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { addNotification } from "@/lib/notifications";
-import { useLanguage } from "@/lib/language";
+import { useLanguage, type TranslationKey } from "@/lib/language";
+
+import { brandPageTitle, BRAND_NAME } from "@/lib/brand";
+import { useChatWebSocket } from "@/lib/use-chat-ws";
+import { getMergedAdminEmailsForLoader, getWeeklyRevenueStats, getFinancialSummary, recordAdminActivity, type WeeklyRevenuePoint, type FinancialSummary } from "@/lib/admin.server";
+import { fileToUploadDataUrl } from "@/lib/compress-image";
+import {
+  AdminBidsPanel, AdminActivityPanel,
+  AdminSettingsPanel, AdminFinancialPanel, AdminExpensesPanel, AdminRefundsPanel,
+} from "@/components/admin/AdminExtraPanels";
+import { AdminCarsSection } from "@/components/admin/AdminCarsSection";
+import { AdminUsersSection } from "@/components/admin/AdminUsersSection";
+import { AdminEntryRequestsSection } from "@/components/admin/AdminEntryRequestsSection";
+import { AdminBrandBreakdown, useAdminDashboardCounts } from "@/components/admin/AdminOverviewWidgets";
+import { exportAdminInventoryCsv, queryAdminCarOptions, type AdminCarOption } from "@/lib/admin-tables.server";
+import type { ChatMessage } from "@/lib/chat.server";
 
 export const Route = createFileRoute("/ops-x7k9m2")({
-  head: () => ({ meta: [{ title: "Admin — APEXAuto" }] }),
+  head: () => ({ meta: [{ title: brandPageTitle("Admin") }] }),
   loader: async ({ context }) => {
     // Resolve admin status — server is the authoritative source when Clerk keys
     // are correctly configured. When getUser() returns null (Clerk passthrough /
@@ -45,16 +57,21 @@ export const Route = createFileRoute("/ops-x7k9m2")({
     const user = context.user ?? await getUser();
     if (user && !user.isAdmin) throw redirect({ to: "/" });
     const isAdmin = user?.isAdmin ?? false;
-    const adminEmails = getAdminEmails();
 
     await markExpiredAuctions();
-    const [cars, live, submissions, users, soldCars, entryRequests, depositSettings, chats, heroCarPin] = await Promise.all([
-      getCarsFromDb(), getLiveCarsFromDb(), getListingRequests(),
-      getUsersFromDb(), getSoldCarsFromDb(),
-      getAuctionEntryRequests(), getAuctionDepositSettings(),
+    const mergedAdminEmails = await getMergedAdminEmailsForLoader().catch(() => [] as string[]);
+    const weeklyRevenue = isAdmin
+      ? await getWeeklyRevenueStats().catch(() => [] as WeeklyRevenuePoint[])
+      : [];
+    const financialSummary = isAdmin
+      ? await getFinancialSummary().catch(() => null)
+      : null;
+    const [live, depositSettings, chats, heroCarPin] = await Promise.all([
+      getLiveCarsFromDb(),
+      getAuctionDepositSettings(),
       getAdminChats(), getHeroCarPin(),
     ]);
-    return { cars, live, submissions, users, soldCars, entryRequests, depositSettings, chats, isAdmin, adminEmails, heroCarPin };
+    return { live, depositSettings, chats, isAdmin, adminEmails: mergedAdminEmails, heroCarPin, weeklyRevenue, financialSummary };
   },
   component: AdminPage,
 });
@@ -70,7 +87,7 @@ const EMPTY_FORM: FormState = {
   transmission: "Automatic", drivetrain: "RWD", color: "", condition: "Excellent",
   is_new: false,
   image_url: null, images: [], videos: [], documents: [],
-  dealership: "", city: "", hp: null, engine: null, vin: null,
+  city: "", hp: null, engine: null, vin: null,
   plate_status: "Clean", seats: 5, is_live: false,
   current_bid: null, starting_price: null, buy_now_price: null,
   reserve_price: null, min_raise: 10000, ends_at: null,
@@ -104,29 +121,32 @@ const CAR_OPTIONS_LIST: { key: string; label: string }[] = [
 ];
 
 type Tab = "basic" | "mechanical" | "condition" | "options" | "media" | "auction";
-type AdminSectionTab = "overview" | "cars" | "requests" | "people";
+type AdminSectionTab = "overview" | "cars" | "bids" | "requests" | "people" | "settings" | "expenses";
 
-const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
-  { id: "basic", label: "Basic Info", icon: CarIcon },
-  { id: "mechanical", label: "Mechanical", icon: Wrench },
-  { id: "condition", label: "Condition", icon: Shield },
-  { id: "options", label: "Options", icon: Zap },
-  { id: "media", label: "Media", icon: ImagePlus },
-  { id: "auction", label: "Auction", icon: Gavel },
+const TABS: { id: Tab; labelKey: TranslationKey; icon: React.ElementType }[] = [
+  { id: "basic", labelKey: "admin_form_tab_basic", icon: CarIcon },
+  { id: "mechanical", labelKey: "admin_form_tab_mechanical", icon: Wrench },
+  { id: "condition", labelKey: "admin_form_tab_condition", icon: Shield },
+  { id: "options", labelKey: "admin_form_tab_options", icon: Zap },
+  { id: "media", labelKey: "admin_form_tab_media", icon: ImagePlus },
+  { id: "auction", labelKey: "admin_form_tab_auction", icon: Gavel },
 ];
 
 function sel(className = "") {
   return `w-full bg-background/50 border border-border rounded-lg px-3 py-2 text-sm outline-none focus:border-primary transition-colors ${className}`;
 }
 
-function Label({ children }: { children: React.ReactNode }) {
-  return <label className="text-xs text-muted-foreground mb-1 block font-medium">{children}</label>;
+function Label({ children, tKey }: { children?: React.ReactNode; tKey?: TranslationKey }) {
+  const { t } = useLanguage();
+  return <label className="text-xs text-muted-foreground mb-1 block font-medium">{tKey ? t(tKey) : children}</label>;
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, tKey, children }: { title?: string; tKey?: TranslationKey; children: React.ReactNode }) {
+  const { t } = useLanguage();
+  const heading = tKey ? t(tKey) : (title ?? "");
   return (
     <div className="space-y-3">
-      <h3 className="text-[11px] uppercase tracking-[0.15em] text-primary-glow font-bold border-b border-border/40 pb-2">{title}</h3>
+      <h3 className="text-[11px] uppercase tracking-[0.15em] text-primary-glow font-bold border-b border-border/40 pb-2">{heading}</h3>
       {children}
     </div>
   );
@@ -134,11 +154,12 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function GalleryThumb({ url, onRemove }: { url: string; onRemove: () => void }) {
   const [broken, setBroken] = useState(false);
+  const { t } = useLanguage();
   return (
     <div className="relative group">
       {broken ? (
         <div className="w-full h-24 rounded-lg border border-border/40 flex items-center justify-center text-xs text-muted-foreground bg-secondary/30">
-          No image
+          {t("admin_no_image")}
         </div>
       ) : (
         <img
@@ -159,17 +180,16 @@ function GalleryThumb({ url, onRemove }: { url: string; onRemove: () => void }) 
 }
 
 function AdminPage() {
-  const { cars, live, submissions, users, soldCars, entryRequests: initialEntryRequests, depositSettings: initialDepositSettings, chats: initialChats, isAdmin: serverIsAdmin, adminEmails, heroCarPin: initialHeroCarPin } = Route.useLoaderData();
+  const { live, depositSettings: initialDepositSettings, chats: initialChats, isAdmin: serverIsAdmin, adminEmails, heroCarPin: initialHeroCarPin, weeklyRevenue, financialSummary } = Route.useLoaderData();
   const { user: clerkUser, isLoaded } = useUser();
   const navigate = useNavigate();
   const router = useRouter();
   const { t, lang } = useLanguage();
 
   // Admin only if email is listed in ADMIN_EMAIL (.env). Server is authoritative when available.
-  const clerkEmail = clerkUser?.emailAddresses?.[0]?.emailAddress?.toLowerCase() ?? "";
   const isAdmin =
     serverIsAdmin ||
-    (clerkEmail !== "" && adminEmails.includes(clerkEmail));
+    resolveClientIsAdmin(clerkUser, undefined, adminEmails);
 
   useEffect(() => {
     // Once Clerk has finished loading, anyone who is not an ADMIN_EMAIL account is sent home.
@@ -183,10 +203,13 @@ function AdminPage() {
   const [form, setForm] = useState<FormState>({ ...EMPTY_FORM });
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("basic");
   const [adminTab, setAdminTab] = useState<AdminSectionTab>("overview");
-  const [mediaInput, setMediaInput] = useState({ image: "", video: "", doc: "" });
+  const [uploadingPdf, setUploadingPdf] = useState(false);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
+  const [tableRefresh, setTableRefresh] = useState(0);
+  const bumpTableRefresh = () => setTableRefresh((n) => n + 1);
+  const [mediaInput, setMediaInput] = useState({ image: "", video: "" });
   const [customOptionInput, setCustomOptionInput] = useState("");
 
   const [now, setNow] = useState<number | null>(null);
@@ -195,27 +218,100 @@ function AdminPage() {
   const mainImgRef = useRef<HTMLInputElement>(null);
   const galleryImgRef = useRef<HTMLInputElement>(null);
 
-  const handleUpload = (file: File | undefined, target: "primary" | "gallery") => {
+  const handleUpload = async (file: File | undefined, target: "primary" | "gallery") => {
     if (!file) return;
     setUploadingImage(true);
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const fileData = ev.target?.result as string;
-      try {
-        const { url } = await uploadImage({ data: { fileData, fileName: file.name } });
-        if (target === "primary") {
-          set("image_url", url);
-        } else {
-          setForm((f) => ({ ...f, images: [...f.images, url] }));
-        }
-        toast.success("Image uploaded successfully");
-      } catch {
-        toast.error("Image upload failed");
-      } finally {
-        setUploadingImage(false);
+    try {
+      const fileData = await fileToUploadDataUrl(file);
+      const { url } = await uploadImage({ data: { fileData, fileName: file.name } });
+      if (target === "primary") {
+        set("image_url", url);
+      } else {
+        setForm((f) => ({ ...f, images: [...f.images, url] }));
       }
-    };
-    reader.readAsDataURL(file);
+      toast.success(t("toast_img_upload_ok"));
+    } catch (err) {
+      console.error("[upload]", err);
+      toast.error(err instanceof Error ? err.message : t("toast_img_upload_fail"));
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const handleMarkSold = async (car: DbCar) => {
+    try {
+      await markCarAsSold({ data: { id: car.id, salePrice: car.current_bid ?? car.price } });
+      await recordAdminActivity({ data: { action: "mark_sold", entityType: "car", entityId: car.id, details: car.title } }).catch(() => {});
+      toast.success(t("admin_mark_sold_ok"));
+      router.invalidate();
+      bumpTableRefresh();
+    } catch {
+      toast.error(t("toast_save_fail"));
+    }
+  };
+
+  const handleMarkUnsold = async (car: DbCar) => {
+    try {
+      await markCarAsUnsold({ data: { id: car.id, status: "none" } });
+      await recordAdminActivity({ data: { action: "mark_unsold", entityType: "car", entityId: car.id, details: car.title } }).catch(() => {});
+      toast.success(t("admin_mark_unsold_ok"));
+      router.invalidate();
+      bumpTableRefresh();
+    } catch {
+      toast.error(t("toast_save_fail"));
+    }
+  };
+
+  const handleContactWinner = (car: DbCar) => {
+    if (!car.winner_email) {
+      toast.error(t("admin_no_winner"));
+      return;
+    }
+    void recordAdminActivity({
+      data: { action: "contact_winner", entityType: "car", entityId: car.id, details: car.winner_email },
+    }).catch(() => {});
+    navigate({ to: "/ops-x7k9m2/chat", search: { car: car.id, buyer: car.winner_email } });
+  };
+
+  const handleMarkNoSale = async (car: DbCar) => {
+    try {
+      await markCarAsUnsold({ data: { id: car.id, status: "no_sale" } });
+      await recordAdminActivity({ data: { action: "mark_no_sale", entityType: "car", entityId: car.id, details: car.title } }).catch(() => {});
+      toast.success(t("admin_mark_no_sale_ok"));
+      router.invalidate();
+      bumpTableRefresh();
+    } catch {
+      toast.error(t("toast_save_fail"));
+    }
+  };
+
+  const handleResolveExpired = async (car: DbCar) => {
+    try {
+      await resolveExpiredCar({ data: car.id });
+      toast.success(t("admin_resolve_ok"));
+      router.invalidate();
+      bumpTableRefresh();
+    } catch {
+      toast.error(t("toast_save_fail"));
+    }
+  };
+
+  const handleRelist = (car: DbCar) => {
+    void updateCar({ data: { id: car.id, auction_status: "none", ends_at: null as unknown as number } }).then(() => {
+      handleToggleLive(car as DbCar & { bids_count: number });
+    }).catch(() => toast.error(t("toast_save_fail")));
+  };
+
+  const handleToggleVisibility = async (car: DbCar) => {
+    const hidden = car.is_visible === false || car.is_visible === 0;
+    try {
+      await updateCar({ data: { id: car.id, is_visible: hidden } });
+      toast.success(hidden ? t("admin_visibility_shown_ok") : t("admin_visibility_hidden_ok"));
+      router.invalidate();
+      bumpTableRefresh();
+    } catch {
+      toast.error(t("toast_update_fail"));
+    }
   };
 
   useEffect(() => {
@@ -226,10 +322,15 @@ function AdminPage() {
 
   useEffect(() => {
     if (showForm) {
+      document.body.style.overflow = "hidden";
       const t = requestAnimationFrame(() => setDrawerVisible(true));
-      return () => cancelAnimationFrame(t);
+      return () => {
+        cancelAnimationFrame(t);
+        document.body.style.overflow = "";
+      };
     } else {
       setDrawerVisible(false);
+      document.body.style.overflow = "";
     }
   }, [showForm]);
 
@@ -238,27 +339,12 @@ function AdminPage() {
     setTimeout(() => setShowForm(false), 320);
   };
 
-  const [submissionsList, setSubmissionsList] = useState<ListingRequest[]>(submissions);
-  const [updatingId, setUpdatingId] = useState<number | null>(null);
-
   const [chatsList, setChatsList] = useState<ChatConversation[]>(initialChats);
-  const [expandedChat, setExpandedChat] = useState<string | null>(null);
-  const [chatReplyText, setChatReplyText] = useState<Record<string, string>>({});
-  const [sendingReply, setSendingReply] = useState<string | null>(null);
 
   // Go Live modal
   const [goLiveTarget, setGoLiveTarget] = useState<DbCar | null>(null);
   const [goLiveEndsAt, setGoLiveEndsAt] = useState("");
   const [goLiveConfirming, setGoLiveConfirming] = useState(false);
-
-  const [entryRequestsList, setEntryRequestsList] = useState<AuctionEntryRequest[]>(initialEntryRequests);
-  const [updatingEntryId, setUpdatingEntryId] = useState<number | null>(null);
-  const [rejectionReason, setRejectionReason] = useState<Record<number, string>>({});
-  const [expandedEntryIds, setExpandedEntryIds] = useState<Set<number>>(new Set());
-  const [shownProofIds, setShownProofIds] = useState<Set<number>>(new Set());
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
-  const [depositSettingsForm, setDepositSettingsForm] = useState<DepositSettings>(initialDepositSettings);
-  const [savingSettings, setSavingSettings] = useState(false);
 
   // Hero Spotlight
   const [heroPinId, setHeroPinId] = useState<string>(initialHeroCarPin ?? "");
@@ -269,133 +355,78 @@ function AdminPage() {
     try {
       await setHeroCarPin({ data: { carId } });
       setHeroPinId(carId ?? "");
-      toast.success(carId ? "Hero spotlight updated" : "Hero spotlight set to auto");
+      toast.success(carId ? t("toast_hero_updated") : t("toast_hero_auto"));
       router.invalidate();
     } catch {
-      toast.error("Failed to update hero spotlight");
+      toast.error(t("toast_hero_fail"));
     } finally {
       setSavingHeroPin(false);
     }
   };
 
-  const handleEntryStatus = async (req: AuctionEntryRequest, status: string) => {
-    setUpdatingEntryId(req.id);
-    try {
-      await updateAuctionEntryStatus({
-        data: {
-          id: req.id,
-          status,
-          rejectionReason: status === "rejected" ? (rejectionReason[req.id] ?? "") : undefined,
-          userEmail: req.user_email,
-          carId: req.car_id,
-        },
+  useChatWebSocket({
+    enabled: isAdmin && adminTab === "people",
+    role: "admin",
+    onMessage: (msg: ChatMessage) => {
+      setChatsList((prev) => {
+        const idx = prev.findIndex(
+          (c) => c.car_id === msg.car_id && c.buyer_email === msg.buyer_email,
+        );
+        if (idx === -1) return prev;
+        const updated = [...prev];
+        const convo = updated[idx];
+        if (convo.messages.some((m) => m.id === msg.id)) return prev;
+        updated[idx] = {
+          ...convo,
+          messages: [...convo.messages, msg],
+          last_message: msg.message,
+          last_at: msg.created_at,
+        };
+        return updated;
       });
-      setEntryRequestsList((prev) => prev.map((r) => r.id === req.id ? { ...r, status, rejection_reason: rejectionReason[req.id] ?? null } : r));
-      toast.success(status === "approved" ? "Entry approved — user can now bid" : `Entry ${status}`);
-      if (status === "approved") {
-        addNotification({
-          type: "entry_approved",
-          title: "Auction entry approved",
-          body: `You've been approved to bid on ${req.car_title}. You can now place bids on this live auction.`,
-          carId: req.car_id,
-        });
-      } else if (status === "rejected") {
-        addNotification({
-          type: "entry_rejected",
-          title: "Auction entry not approved",
-          body: `Your entry request for ${req.car_title} was not approved${rejectionReason[req.id] ? `: ${rejectionReason[req.id]}` : "."}`,
-          carId: req.car_id,
-        });
-      }
-    } catch {
-      toast.error("Failed to update entry status");
-    } finally {
-      setUpdatingEntryId(null);
-    }
-  };
+    },
+  });
 
-  const handleSaveDepositSettings = async () => {
-    setSavingSettings(true);
-    try {
-      await updateAuctionDepositSettings({ data: depositSettingsForm });
-      toast.success("Deposit settings saved");
-    } catch {
-      toast.error("Failed to save settings");
-    } finally {
-      setSavingSettings(false);
-    }
-  };
+  const { counts: dashboardCounts } = useAdminDashboardCounts();
 
-  const handleSubmissionStatus = async (id: number, status: string) => {
-    setUpdatingId(id);
-    try {
-      await updateListingRequestStatus({ data: { id, status } });
-      setSubmissionsList((prev) => prev.map((s) => s.id === id ? { ...s, status } : s));
-      toast.success(`Request ${status}`);
-    } catch {
-      toast.error("Failed to update status");
-    } finally {
-      setUpdatingId(null);
-    }
-  };
+  const [carPickerList, setCarPickerList] = useState<AdminCarOption[]>([]);
+  const [carPickerLoading, setCarPickerLoading] = useState(false);
 
-  const handleAdminReply = async (convo: ChatConversation) => {
-    const key = `${convo.car_id}::${convo.buyer_email}`;
-    const text = chatReplyText[key]?.trim();
-    if (!text) return;
-    setSendingReply(key);
-    try {
-      const msg = await sendChatMessage({
-        data: {
-          carId: convo.car_id,
-          buyerEmail: convo.buyer_email,
-          buyerName: convo.buyer_name,
-          senderRole: "admin",
-          message: text,
-        },
-      });
-      setChatsList((prev) =>
-        prev.map((c) =>
-          c.car_id === convo.car_id && c.buyer_email === convo.buyer_email
-            ? { ...c, messages: [...c.messages, msg], last_message: text, last_at: msg.created_at }
-            : c
-        )
-      );
-      setChatReplyText((r) => ({ ...r, [key]: "" }));
-      toast.success("Reply sent");
-    } catch {
-      toast.error("Failed to send reply");
-    } finally {
-      setSendingReply(null);
-    }
-  };
+  useEffect(() => {
+    if (!isAdmin || (adminTab !== "cars" && adminTab !== "bids")) return;
+    let cancelled = false;
+    setCarPickerLoading(true);
+    queryAdminCarOptions()
+      .then((rows) => { if (!cancelled) setCarPickerList(rows); })
+      .catch(() => { if (!cancelled) setCarPickerList([]); })
+      .finally(() => { if (!cancelled) setCarPickerLoading(false); });
+    return () => { cancelled = true; };
+  }, [isAdmin, adminTab, tableRefresh]);
 
-  const totalCars = cars.length;
-  const liveCars = live.length;
-  const featuredCount = cars.filter((c) => c.featured).length;
-  const bars = [42, 58, 71, 49, 88, 95, 76, 102, 89, 124, 110, 138];
+  const totalCars = dashboardCounts?.totalCars ?? 0;
+  const liveCars = dashboardCounts?.liveCars ?? live.length;
+  const revenueBars = weeklyRevenue.length > 0 ? weeklyRevenue : [{ label: "—", revenue: 0, bids: 0 }];
+  const maxRevenue = Math.max(...revenueBars.map((p) => p.revenue), 1);
+  const carOptions = useMemo(
+    () => carPickerList.map((c) => ({ id: c.id, title: c.title })),
+    [carPickerList],
+  );
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
 
-  const handleExport = () => {
-    const rows = [
-      ["Title", "Brand", "Model", "Year", "VIN", "Status", "Price", "Current Bid", "Dealership", "City", "Condition", "Mileage", "Featured"],
-      ...cars.map((c) => [
-        c.title, c.brand, c.model, c.year, c.vin ?? "",
-        c.is_live ? "Live" : "Listed",
-        c.price, c.current_bid ?? "",
-        c.dealership, c.city, c.condition,
-        c.mileage, c.featured ? "Yes" : "No",
-      ]),
-    ];
-    const csv = rows.map((r) => r.join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "apexauto-inventory.csv"; a.click();
-    URL.revokeObjectURL(url);
-    toast.success("Inventory exported as CSV");
+  const handleExport = async () => {
+    try {
+      const csv = await exportAdminInventoryCsv();
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "elitedrive-inventory.csv"; a.click();
+      URL.revokeObjectURL(url);
+      toast.success(t("toast_csv_exported"));
+    } catch {
+      toast.error(t("toast_save_fail"));
+    }
   };
 
   const openNew = () => {
@@ -414,7 +445,7 @@ function AdminPage() {
       transmission: car.transmission, drivetrain: car.drivetrain ?? "RWD",
       color: car.color, condition: car.condition, image_url: car.image_url ?? null,
       images: car.images ?? [], videos: car.videos ?? [], documents: car.documents ?? [],
-      dealership: car.dealership, city: car.city,
+      city: car.city,
       hp: car.hp ?? null, engine: car.engine ?? null, vin: car.vin ?? null,
       plate_status: car.plate_status ?? "Clean", seats: car.seats ?? 5,
       is_live: car.is_live ?? false,
@@ -447,8 +478,8 @@ function AdminPage() {
   };
 
   const handleSave = async () => {
-    if (!form.title || !form.brand || !form.model || !form.dealership || !form.city) {
-      toast.error("Fill required fields: Title, Brand, Model, Dealership, City");
+    if (!form.title || !form.brand || !form.model || !form.city) {
+      toast.error(t("toast_fill_required"));
       setTab("basic");
       return;
     }
@@ -464,15 +495,18 @@ function AdminPage() {
       };
       if (editingCar) {
         await updateCar({ data: payload });
-        toast.success(`${form.title} updated`);
+        await recordAdminActivity({ data: { action: "update_car", entityType: "car", entityId: id, details: form.title } }).catch(() => {});
+        toast.success(t("toast_car_updated", { title: form.title }));
       } else {
         await createCar({ data: payload });
-        toast.success(`${form.title} added to inventory`);
+        await recordAdminActivity({ data: { action: "create_car", entityType: "car", entityId: id, details: form.title } }).catch(() => {});
+        toast.success(t("toast_car_added", { title: form.title }));
       }
       closeForm();
       router.invalidate();
+      bumpTableRefresh();
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to save");
+      toast.error(err instanceof Error ? err.message : t("toast_save_fail"));
     } finally {
       setSaving(false);
     }
@@ -481,10 +515,12 @@ function AdminPage() {
   const handleDelete = async (id: string, title: string) => {
     try {
       await deleteCar({ data: id });
-      toast.success(`${title} deleted`);
+      await recordAdminActivity({ data: { action: "delete_car", entityType: "car", entityId: id, details: title } }).catch(() => {});
+      toast.success(t("toast_car_deleted", { title }));
       setDeleteConfirm(null);
       router.invalidate();
-    } catch { toast.error("Failed to delete"); }
+      bumpTableRefresh();
+    } catch { toast.error(t("toast_delete_fail")); }
   };
 
   /** Convert a timestamp to the 'YYYY-MM-DDThh:mm' format that datetime-local expects (local time, not UTC). */
@@ -495,11 +531,15 @@ function AdminPage() {
   };
 
   const handleToggleLive = (car: DbCar) => {
+    if (car.is_sold) {
+      toast.error(t("admin_sold_live_block"));
+      return;
+    }
     if (car.is_live) {
       // Unlist directly — no modal needed
       updateCar({ data: { id: car.id, is_live: false } })
-        .then(() => { toast.success(`${car.title} unlisted`); router.invalidate(); })
-        .catch(() => toast.error("Failed to update"));
+        .then(() => { toast.success(t("toast_car_unlisted", { title: car.title })); router.invalidate(); bumpTableRefresh(); })
+        .catch(() => toast.error(t("toast_update_fail")));
     } else {
       // Open end-time modal before going live (default: 24h from now, local time)
       setGoLiveEndsAt(toLocalDT(Date.now() + 24 * 60 * 60 * 1000));
@@ -510,24 +550,26 @@ function AdminPage() {
   const handleConfirmGoLive = async () => {
     if (!goLiveTarget || goLiveConfirming) return;
     const endsAt = goLiveEndsAt ? new Date(goLiveEndsAt).getTime() : null;
-    if (!endsAt || isNaN(endsAt)) { toast.error("Please set a valid end date & time"); return; }
-    if (endsAt <= Date.now()) { toast.error("End time must be in the future"); return; }
+    if (!endsAt || isNaN(endsAt)) { toast.error(t("toast_valid_end")); return; }
+    if (endsAt <= Date.now()) { toast.error(t("toast_end_future")); return; }
     setGoLiveConfirming(true);
     try {
       await updateCar({ data: { id: goLiveTarget.id, is_live: true, ends_at: endsAt } });
-      toast.success(`${goLiveTarget.title} is now LIVE!`);
+      toast.success(t("toast_now_live", { title: goLiveTarget.title }));
       setGoLiveTarget(null);
       router.invalidate();
-    } catch { toast.error("Failed to go live"); }
+      bumpTableRefresh();
+    } catch { toast.error(t("toast_go_live_fail")); }
     finally { setGoLiveConfirming(false); }
   };
 
   const handleToggleFeatured = async (car: DbCar) => {
     try {
       await updateCar({ data: { id: car.id, featured: !car.featured } });
-      toast.success(`${car.title} ${!car.featured ? "featured" : "unfeatured"}`);
+      toast.success(!car.featured ? t("toast_featured", { title: car.title }) : t("toast_unfeatured", { title: car.title }));
       router.invalidate();
-    } catch { toast.error("Failed to update"); }
+      bumpTableRefresh();
+    } catch { toast.error(t("toast_update_fail")); }
   };
 
   const endsAtDisplay = form.ends_at
@@ -540,17 +582,40 @@ function AdminPage() {
 
   const setQuickTimer = (minutes: number) => {
     set("ends_at", Date.now() + minutes * 60 * 1000);
-    toast.success(`Auction end time set to ${minutes < 60 ? `${minutes} minutes` : `${minutes / 60} hours`} from now`);
+    toast.success(t("toast_auction_end_set", {
+      duration: minutes < 60 ? t("toast_duration_minutes", { n: minutes }) : t("toast_duration_hours", { n: minutes / 60 }),
+    }));
   };
 
-  const addMedia = (type: "image" | "video" | "doc") => {
+  const handleUploadPdf = (file: File | undefined) => {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".pdf")) {
+      toast.error(t("admin_pdf_upload_fail"));
+      return;
+    }
+    setUploadingPdf(true);
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const { url } = await uploadDocument({ data: { fileData: ev.target?.result as string, fileName: file.name } });
+        setForm((f) => ({ ...f, documents: [...f.documents, url] }));
+        toast.success(t("admin_pdf_upload_ok"));
+      } catch {
+        toast.error(t("admin_pdf_upload_fail"));
+      } finally {
+        setUploadingPdf(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const addMedia = (type: "image" | "video") => {
     const url = mediaInput[type].trim();
     if (!url) return;
     if (type === "image") {
       set("images", [...form.images, url]);
       if (!form.image_url) set("image_url", url);
-    } else if (type === "video") set("videos", [...form.videos, url]);
-    else set("documents", [...form.documents, url]);
+    } else set("videos", [...form.videos, url]);
     setMediaInput((m) => ({ ...m, [type]: "" }));
   };
 
@@ -560,39 +625,40 @@ function AdminPage() {
     set(type, arr);
   };
 
-  const soldCount = soldCars.length;
-  const soldValue = soldCars.reduce((s, c) => s + (c.current_bid ?? c.price), 0);
-  const registeredUsers = users.length;
+  const soldCount = dashboardCounts?.soldCars ?? 0;
+  const soldValue = financialSummary?.soldRevenue ?? 0;
+  const registeredUsers = dashboardCounts?.totalUsers ?? 0;
 
   const stats = [
     { icon: DollarSign, l: t("admin_stat_sold_val"), v: `EGP ${(soldValue / 1_000_000).toFixed(1)}M`, d: `${soldCount} sold`, color: "text-green-400" },
     { icon: Gavel, l: t("admin_stat_live"), v: liveCars.toString(), d: `${liveCars} active`, color: "text-[var(--live)]" },
-    { icon: CarIcon, l: t("admin_stat_cars"), v: formatNumber(totalCars), d: `${totalCars} listed`, color: "text-blue-400" },
+    { icon: CarIcon, l: t("admin_stat_cars"), v: formatNumber(totalCars), d: `${totalCars} listed`, color: "text-primary-glow" },
     { icon: Users, l: t("admin_stat_users"), v: registeredUsers.toString(), d: "all time", color: "text-yellow-400" },
   ];
 
-  const pendingRequestsCount =
-    submissionsList.filter((s) => s.status === "pending").length +
-    entryRequestsList.filter((r) => r.status === "pending").length;
+  const pendingRequestsCount = dashboardCounts?.pendingEntries ?? 0;
   const unreadChatCount = chatsList.reduce((sum, c) => sum + c.unread, 0);
 
   const adminTabs = [
     { id: "overview" as const, label: t("admin_tab_overview"), icon: Activity },
     { id: "cars" as const, label: t("admin_tab_cars"), icon: CarIcon },
+    { id: "bids" as const, label: t("admin_tab_bids"), icon: Gavel },
+    { id: "expenses" as const, label: t("admin_tab_expenses"), icon: DollarSign },
     { id: "requests" as const, label: t("admin_tab_requests"), icon: FileText, badge: pendingRequestsCount },
     { id: "people" as const, label: t("admin_tab_people"), icon: Users, badge: unreadChatCount },
+    { id: "settings" as const, label: t("admin_tab_settings"), icon: Shield },
   ];
 
   if (!isAdmin) {
     return (
-      <div className="min-h-screen pb-nav md:pb-0">
+      <div className="min-h-screen pb-nav">
         <Header />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen pb-nav md:pb-0" onClick={() => setDeleteConfirm(null)}>
+    <div className="min-h-screen pb-nav" onClick={() => setDeleteConfirm(null)}>
       <Header />
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
 
@@ -638,6 +704,7 @@ function AdminPage() {
 
         {adminTab === "overview" && (
         <>
+        {financialSummary && <AdminFinancialPanel summary={financialSummary} />}
         {/* Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
           {stats.map((s) => (
@@ -665,13 +732,16 @@ function AdminPage() {
               <TrendingUp className="h-4 w-4 text-primary-glow" />
             </div>
             <div className="flex items-end gap-2 h-48">
-              {bars.map((b, i) => (
-                <div
-                  key={i}
-                  className="flex-1 rounded-t-md bg-gradient-primary opacity-80 hover:opacity-100 transition-smooth cursor-pointer"
-                  style={{ height: `${(b / Math.max(...bars)) * 100}%`, boxShadow: "var(--shadow-glow)" }}
-                  onClick={() => toast.info(`Week ${i + 1}: EGP ${(b * 100_000).toLocaleString()}`)}
-                />
+              {revenueBars.map((b, i) => (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
+                  <div
+                    className="w-full rounded-t-md bg-gradient-primary opacity-80 hover:opacity-100 transition-smooth cursor-pointer"
+                    style={{ height: `${Math.max(4, (b.revenue / maxRevenue) * 100)}%`, boxShadow: "var(--shadow-glow)" }}
+                    title={`EGP ${b.revenue.toLocaleString()}`}
+                    onClick={() => toast.info(`${b.label}: EGP ${b.revenue.toLocaleString()} · ${b.bids} bids`)}
+                  />
+                  <span className="text-[9px] text-muted-foreground truncate w-full text-center">{b.label}</span>
+                </div>
               ))}
             </div>
           </div>
@@ -713,866 +783,104 @@ function AdminPage() {
             )}
           </div>
         </div>
-        {/* Analytics Chart */}
-        <div className="mt-6 rounded-2xl bg-gradient-card border border-border/60 p-6">
-          <div className="flex items-center justify-between mb-5">
-            <div>
-              <h3 className="font-display font-semibold text-lg">{t("admin_breakdown")}</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">{t("admin_by_brand")}</p>
-            </div>
-            <TrendingUp className="h-4 w-4 text-primary-glow" />
-          </div>
-          {(() => {
-            const brandCount: Record<string, number> = {};
-            cars.forEach((c) => { brandCount[c.brand] = (brandCount[c.brand] ?? 0) + 1; });
-            const sorted = Object.entries(brandCount).sort((a, b) => b[1] - a[1]).slice(0, 10);
-            const max = sorted[0]?.[1] ?? 1;
-            return (
-              <div className="space-y-3">
-                {sorted.map(([brand, count]) => (
-                  <div key={brand} className="flex items-center gap-3">
-                    <div className="w-24 text-xs font-medium truncate text-right shrink-0">{brand}</div>
-                    <div className="flex-1 h-6 rounded-full bg-secondary/40 overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-primary rounded-full transition-all duration-500"
-                        style={{ width: `${(count / max) * 100}%` }}
-                      />
-                    </div>
-                    <div className="w-8 text-xs font-display font-bold text-end shrink-0">{count}</div>
-                  </div>
-                ))}
-              </div>
-            );
-          })()}
+        <div className="mt-6">
+          <AdminBrandBreakdown />
         </div>
+        <AdminActivityPanel />
         </>
         )}
 
         {adminTab === "cars" && (
-        <>
-        {/* Car Inventory Table */}
-        <div className="rounded-2xl bg-gradient-card border border-border/60 p-4 sm:p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-display font-semibold">{t("admin_inventory")}</h3>
-            <Badge variant="outline">{totalCars} cars</Badge>
-          </div>
+        <AdminCarsSection
+          now={now}
+          refreshKey={tableRefresh}
+          heroPinId={heroPinId}
+          setHeroPinId={setHeroPinId}
+          carPickerList={carPickerList}
+          carPickerLoading={carPickerLoading}
+          savingHeroPin={savingHeroPin}
+          onSaveHeroPin={handleSaveHeroPin}
+          onToggleLive={handleToggleLive}
+          onMarkSold={handleMarkSold}
+          onMarkUnsold={handleMarkUnsold}
+          onContactWinner={handleContactWinner}
+          onMarkNoSale={handleMarkNoSale}
+          onResolveExpired={handleResolveExpired}
+          onRelist={handleRelist}
+          onToggleVisibility={handleToggleVisibility}
+          onToggleFeatured={handleToggleFeatured}
+          onEdit={openEdit}
+          onDeleteRequest={setDeleteConfirm}
+          deleteConfirmId={deleteConfirm}
+          onDeleteConfirm={handleDelete}
+          onDeleteCancel={() => setDeleteConfirm(null)}
+        />
+        )}
 
-          {/* Mobile cards */}
-          <div className="md:hidden space-y-2">
-            {cars.map((c) => (
-              <div key={c.id} className="rounded-xl border border-border/30 bg-secondary/10 p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {c.featured && <Star className="h-3 w-3 text-yellow-400 fill-yellow-400 shrink-0" />}
-                      {c.is_live
-                        ? <Badge className="bg-[var(--live)] text-white border-0 gap-0.5 text-[10px] px-1.5 py-0.5"><Radio className="h-2.5 w-2.5" /> Live</Badge>
-                        : <Badge variant="outline" className="text-[10px] px-1.5 py-0.5">Listed</Badge>}
-                      {c.ends_at && now && (
-                        <span className={`text-[10px] ${c.ends_at < now ? "text-destructive" : "text-muted-foreground"}`}>
-                          {c.ends_at < now ? "Ended" : `${Math.round((c.ends_at - now) / 60000)}m`}
-                        </span>
-                      )}
-                    </div>
-                    <div className="font-medium text-sm mt-1 truncate">{c.title}</div>
-                    <div className="text-[11px] text-muted-foreground">{c.city} · {c.year}</div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="font-display font-bold text-sm text-gradient-primary">
-                      {formatPrice(c.is_live ? (c.current_bid ?? c.price) : c.price)}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 mt-2.5" onClick={(e) => e.stopPropagation()}>
-                  <Button variant="outline" size="sm" className="glass text-[11px] h-7 px-2 flex-1" onClick={() => handleToggleLive(c)}>
-                    {c.is_live ? "Unlist" : "Go Live"}
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleToggleFeatured(c)}>
-                    <Star className={`h-3 w-3 ${c.featured ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground"}`} />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(c)}>
-                    <Edit2 className="h-3 w-3" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteConfirm(c.id)}>
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </div>
-                {deleteConfirm === c.id && (
-                  <div className="mt-2 p-3 rounded-xl border border-destructive/40 bg-destructive/5" onClick={(e) => e.stopPropagation()}>
-                    <p className="text-xs font-medium mb-2">Delete "{c.title}"?</p>
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="destructive" className="flex-1 h-7 text-xs" onClick={() => handleDelete(c.id, c.title)}>Delete</Button>
-                      <Button size="sm" variant="outline" className="glass h-7 text-xs" onClick={() => setDeleteConfirm(null)}>Cancel</Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
+        {adminTab === "bids" && (
+          <div className="min-h-[calc(100vh-14rem)]">
+            <AdminBidsPanel carOptions={carOptions} />
           </div>
+        )}
 
-          {/* Desktop table */}
-          <div className="hidden md:block overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground border-b border-border/40">
-                  <th className="pb-3 pr-4">Car</th>
-                  <th className="pb-3 pr-4">Status</th>
-                  <th className="pb-3 pr-4">Auction Ends</th>
-                  <th className="pb-3 pr-4 text-right">Price / Bid</th>
-                  <th className="pb-3 pr-4">City</th>
-                  <th className="pb-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cars.map((c) => (
-                  <React.Fragment key={c.id}>
-                    <tr
-                      className="border-t border-border/20 hover:bg-secondary/20 transition-smooth cursor-pointer"
-                      onClick={() => setExpandedId(expandedId === c.id ? null : c.id)}
-                    >
-                      <td className="py-3 pr-4">
-                        <div className="flex items-center gap-2">
-                          {c.featured && <Star className="h-3.5 w-3.5 text-yellow-400 fill-yellow-400 shrink-0" />}
-                          <div>
-                            <div className="font-medium">{c.title}</div>
-                            <div className="text-[11px] text-muted-foreground">{c.dealership} · {c.year}{c.trim ? ` · ${c.trim}` : ""}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-3 pr-4">
-                        {c.is_live
-                          ? <Badge className="bg-[var(--live)] text-white border-0 gap-1"><Radio className="h-3 w-3" /> Live</Badge>
-                          : <Badge variant="outline">Listed</Badge>}
-                      </td>
-                      <td className="py-3 pr-4">
-                        {c.ends_at && now ? (
-                          <div className="flex items-center gap-1 text-xs">
-                            <Timer className="h-3 w-3 text-muted-foreground" />
-                            <span className={c.ends_at < now ? "text-destructive" : "text-muted-foreground"}>
-                              {c.ends_at < now ? "Ended" : `${Math.round((c.ends_at - now) / 60000)}m`}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground/50">—</span>
-                        )}
-                      </td>
-                      <td className="py-3 pr-4 text-right font-display font-semibold tabular-nums">
-                        {formatPrice(c.is_live ? (c.current_bid ?? c.price) : c.price)}
-                      </td>
-                      <td className="py-3 pr-4 text-muted-foreground text-xs">{c.city}</td>
-                      <td className="py-3 text-right relative" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1">
-                          <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => handleToggleLive(c)}>
-                            {c.is_live ? "Unlist" : "Go Live"}
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8" title={c.featured ? "Unfeature" : "Feature"} onClick={() => handleToggleFeatured(c)}>
-                            <Star className={`h-3.5 w-3.5 ${c.featured ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground"}`} />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(c)}>
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteConfirm(c.id)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                          {expandedId === c.id ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-                        </div>
-                        {deleteConfirm === c.id && (
-                          <div className="absolute right-0 mt-1 w-60 glass-strong border border-destructive/40 rounded-xl shadow-elegant z-20 p-3 text-left" onClick={(e) => e.stopPropagation()}>
-                            <p className="text-sm font-medium mb-1">Delete "{c.title}"?</p>
-                            <p className="text-xs text-muted-foreground mb-3">Cannot be undone. All bids removed.</p>
-                            <div className="flex gap-2">
-                              <Button size="sm" variant="destructive" className="flex-1" onClick={() => handleDelete(c.id, c.title)}>Delete</Button>
-                              <Button size="sm" variant="outline" className="glass" onClick={() => setDeleteConfirm(null)}>Cancel</Button>
-                            </div>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                    {expandedId === c.id && (
-                      <tr key={`${c.id}-exp`} className="bg-secondary/10">
-                        <td colSpan={6} className="py-3 px-4">
-                          <div className="grid sm:grid-cols-5 gap-3 text-xs text-muted-foreground">
-                            <span><strong className="text-foreground">Engine:</strong> {c.engine ?? "—"}</span>
-                            <span><strong className="text-foreground">HP:</strong> {c.hp ?? "—"}</span>
-                            <span><strong className="text-foreground">Drivetrain:</strong> {c.drivetrain ?? "—"}</span>
-                            <span><strong className="text-foreground">Fuel:</strong> {c.fuel}</span>
-                            <span><strong className="text-foreground">Transmission:</strong> {c.transmission}</span>
-                            <span><strong className="text-foreground">Mileage:</strong> {formatNumber(c.mileage)} km</span>
-                            <span><strong className="text-foreground">VIN:</strong> {c.vin ?? "—"}</span>
-                            <span><strong className="text-foreground">Plate:</strong> {c.plate_status ?? "—"}</span>
-                            <span><strong className="text-foreground">Accident:</strong> {c.accident_history ? "Yes" : "No"}</span>
-                            <span><strong className="text-foreground">Paint:</strong> {c.paint_condition ?? "—"}</span>
-                            <span><strong className="text-foreground">Tires:</strong> {c.tire_condition ?? "—"}</span>
-                            <span><strong className="text-foreground">Service:</strong> {c.service_history ?? "—"}</span>
-                            <span><strong className="text-foreground">Min Raise:</strong> {formatPrice(c.min_raise ?? 10000)}</span>
-                            <span><strong className="text-foreground">Reserve:</strong> {c.reserve_price ? formatPrice(c.reserve_price) : "None"}</span>
-                            <span><strong className="text-foreground">Images:</strong> {(c.images ?? []).length}</span>
-                          </div>
-                          <div className="flex gap-2 mt-3">
-                            <Button asChild size="sm" variant="outline" className="glass text-xs h-7">
-                              <Link to="/cars/$carId" params={{ carId: c.id }}>View listing</Link>
-                            </Button>
-                            <Button size="sm" variant="outline" className="glass text-xs h-7" onClick={() => openEdit(c)}>
-                              <Edit2 className="h-3 w-3 mr-1" /> Edit
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                ))}
-              </tbody>
-            </table>
+        {adminTab === "expenses" && (
+          <div className="min-h-[calc(100vh-14rem)] space-y-4">
+            <AdminExpensesPanel />
+            <AdminRefundsPanel />
           </div>
-        </div>
+        )}
 
-        {/* ── Hero Spotlight ─────────────────────────────────────── */}
-        <div className="mt-6 rounded-2xl bg-gradient-card border border-border/60 p-6">
-          <div className="flex items-start justify-between mb-5 gap-3">
-            <div>
-              <h3 className="font-display font-semibold text-lg flex items-center gap-2">
-                <Star className="h-4 w-4 text-primary-glow" />
-                {t("admin_hero_spot")}
-              </h3>
-              <p className="text-xs text-muted-foreground mt-0.5">{t("admin_hero_sub")}</p>
-            </div>
-            {heroPinId && (
-              <Badge className="bg-primary/20 text-primary-glow border-primary/30 shrink-0">{t("admin_pinned")}</Badge>
-            )}
-          </div>
-
-          {/* Currently pinned car preview */}
-          {(() => {
-            const pinned = heroPinId ? cars.find((c) => c.id === heroPinId) : null;
-            if (pinned) {
-              return (
-                <div className="mb-4 flex items-center gap-3 p-3 rounded-xl bg-secondary/40 border border-primary/20">
-                  {pinned.image_url && (
-                    <img src={pinned.image_url} alt={pinned.title} className="h-14 w-20 object-cover rounded-lg shrink-0" />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <div className="font-medium text-sm truncate">{pinned.title}</div>
-                    <div className="text-xs text-muted-foreground">{pinned.brand} · {pinned.year} · EGP {formatNumber(pinned.current_bid ?? pinned.price)}</div>
-                    {pinned.is_live && (
-                      <Badge className="mt-1 bg-[var(--live)] text-white border-0 text-[10px] px-1.5 py-0 gap-1">
-                        <Radio className="h-2.5 w-2.5" /> LIVE
-                      </Badge>
-                    )}
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="glass text-xs shrink-0"
-                    disabled={savingHeroPin}
-                    onClick={() => handleSaveHeroPin(null)}
-                  >
-                    <X className="h-3.5 w-3.5 me-1" /> Clear (Auto)
-                  </Button>
-                </div>
-              );
-            }
-            // Auto mode — show what would be selected
-            const soonestLive = [...cars]
-              .filter((c) => c.is_live && c.ends_at != null)
-              .sort((a, b) => (a.ends_at ?? 0) - (b.ends_at ?? 0))[0]
-              ?? cars.find((c) => c.is_live)
-              ?? [...cars].sort((a, b) => {
-                if (b.featured !== a.featured) return (b.featured ? 1 : 0) - (a.featured ? 1 : 0);
-                return (b.hp ?? 0) - (a.hp ?? 0) || b.price - a.price;
-              })[0];
-            return soonestLive ? (
-              <div className="mb-4 flex items-center gap-3 p-3 rounded-xl bg-secondary/20 border border-border/40">
-                {soonestLive.image_url && (
-                  <img src={soonestLive.image_url} alt={soonestLive.title} className="h-14 w-20 object-cover rounded-lg shrink-0 opacity-70" />
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Auto-selected</div>
-                  <div className="font-medium text-sm truncate">{soonestLive.title}</div>
-                  <div className="text-xs text-muted-foreground">{soonestLive.brand} · {soonestLive.year}</div>
-                </div>
-              </div>
-            ) : null;
-          })()}
-
-          {/* Car picker */}
-          <div className="flex gap-2">
-            <div className="flex-1">
-              <label className="text-xs text-muted-foreground mb-1 block">Pin a specific car to the hero spotlight</label>
-              <select
-                value={heroPinId}
-                onChange={(e) => setHeroPinId(e.target.value)}
-                className="w-full rounded-lg border border-border/60 bg-background/60 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
-              >
-                <option value="">— Auto (soonest live or best car) —</option>
-                {[...cars]
-                  .sort((a, b) => {
-                    if (a.is_live !== b.is_live) return a.is_live ? -1 : 1;
-                    return a.title.localeCompare(b.title);
-                  })
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.is_live ? "🔴 " : ""}{c.title} · {c.year} · EGP {formatNumber(c.current_bid ?? c.price)}
-                    </option>
-                  ))}
-              </select>
-            </div>
-            <div className="flex items-end">
-              <Button
-                size="sm"
-                className="bg-gradient-primary border-0 text-primary-foreground h-9"
-                disabled={savingHeroPin}
-                onClick={() => handleSaveHeroPin(heroPinId || null)}
-              >
-                {savingHeroPin ? "Saving…" : "Save"}
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        {/* Sold Cars Section */}
-        <div className="mt-6 rounded-2xl bg-gradient-card border border-border/60 p-6">
-          <div className="flex items-center justify-between mb-5">
-            <div>
-              <h3 className="font-display font-semibold text-lg">{t("admin_sold_arch")}</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">{t("admin_sold_sub")}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline">{soldCount} sold</Badge>
-              <Badge className="bg-green-500/20 text-green-400 border-0">
-                {soldCount > 0 ? `EGP ${(soldValue / 1_000_000).toFixed(1)}M total` : "—"}
-              </Badge>
-            </div>
-          </div>
-          {soldCars.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-6 text-center">{t("admin_no_sold")}</p>
-          ) : (
-            <>
-              {/* Mobile cards */}
-              <div className="md:hidden space-y-2">
-                {soldCars.map((c) => (
-                  <div key={c.id} className="rounded-xl border border-border/30 bg-secondary/10 p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <Link to="/cars/$carId" params={{ carId: c.id }} className="font-medium text-sm hover:text-primary-glow block truncate">{c.title}</Link>
-                        <div className="text-[11px] text-muted-foreground">{c.brand} · {c.year} · {c.city}</div>
-                        <div className="text-[11px] text-muted-foreground">{c.sold_at ? new Date(c.sold_at).toLocaleDateString() : "—"}</div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className="font-display font-bold text-sm text-gradient-primary">{formatPrice(c.current_bid ?? c.price)}</div>
-                        {c.current_bid && c.current_bid > c.price && (
-                          <div className="text-[10px] text-green-400">+{Math.round(((c.current_bid - c.price) / c.price) * 100)}%</div>
-                        )}
-                        <div className="text-[10px] text-muted-foreground">{formatPrice(c.price)} start</div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {/* Desktop table */}
-              <div className="hidden md:block overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground border-b border-border/40">
-                      <th className="pb-3 pr-4">Car</th>
-                      <th className="pb-3 pr-4">Dealership</th>
-                      <th className="pb-3 pr-4">Sold Date</th>
-                      <th className="pb-3 pr-4 text-right">Starting Price</th>
-                      <th className="pb-3 text-right">Final Price</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {soldCars.map((c) => (
-                      <tr key={c.id} className="border-t border-border/20 hover:bg-secondary/20 transition-smooth">
-                        <td className="py-3 pr-4">
-                          <Link to="/cars/$carId" params={{ carId: c.id }} className="font-medium hover:text-primary-glow transition-smooth block">{c.title}</Link>
-                          <div className="text-[11px] text-muted-foreground">{c.brand} · {c.year} · {c.city}</div>
-                        </td>
-                        <td className="py-3 pr-4 text-muted-foreground text-xs">{c.dealership}</td>
-                        <td className="py-3 pr-4 text-xs text-muted-foreground">{c.sold_at ? new Date(c.sold_at).toLocaleDateString() : "—"}</td>
-                        <td className="py-3 pr-4 text-right font-display tabular-nums text-xs text-muted-foreground">{formatPrice(c.price)}</td>
-                        <td className="py-3 text-right font-display font-semibold tabular-nums text-gradient-primary">
-                          {formatPrice(c.current_bid ?? c.price)}
-                          {c.current_bid && c.current_bid > c.price && (
-                            <div className="text-[10px] text-green-400 font-normal">+{Math.round(((c.current_bid - c.price) / c.price) * 100)}%</div>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </div>
-        </>
+        {adminTab === "settings" && (
+          <AdminSettingsPanel />
         )}
 
         {adminTab === "requests" && (
-        <>
-        {/* Listing Submissions */}
-        <div className="rounded-2xl bg-gradient-card border border-border/60 p-6">
-          <div className="flex items-center justify-between mb-5">
-            <div>
-              <h3 className="font-display font-semibold text-lg">{t("admin_submissions")}</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">{t("admin_submissions_sub")}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline">{submissionsList.length} {t("admin_total")}</Badge>
-              <Badge className="bg-yellow-500/20 text-yellow-400 border-0">
-                {submissionsList.filter((s) => s.status === "pending").length} {t("admin_pending")}
-              </Badge>
-            </div>
-          </div>
-
-          {submissionsList.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-6 text-center">{t("admin_no_subs")}</p>
-          ) : (
-            <>
-              {/* Mobile cards */}
-              <div className="md:hidden space-y-2">
-                {submissionsList.map((s) => (
-                  <div key={s.id} className="rounded-xl border border-border/30 bg-secondary/10 p-3">
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <div className="min-w-0">
-                        <div className="font-medium text-sm truncate">{s.name}</div>
-                        <div className="text-[11px] text-muted-foreground truncate">{s.email}</div>
-                        <div className="text-xs font-semibold mt-0.5">{s.brand} {s.model} · {s.year ?? "—"}</div>
-                        {s.price && <div className="text-xs text-primary-glow font-display font-bold">EGP {s.price}</div>}
-                      </div>
-                      <Badge className={`shrink-0 text-[10px] ${
-                        s.status === "approved" ? "bg-[var(--success)]/20 text-[var(--success)] border-0" :
-                        s.status === "rejected" ? "bg-destructive/20 text-destructive border-0" :
-                        "bg-yellow-500/20 text-yellow-400 border-0"
-                      }`}>{s.status}</Badge>
-                    </div>
-                    <div className="flex gap-1">
-                      {s.status !== "approved" && (
-                        <Button size="sm" variant="outline" className="text-[11px] h-7 flex-1 glass text-[var(--success)] border-[var(--success)]/30" disabled={updatingId === s.id} onClick={() => handleSubmissionStatus(s.id, "approved")}>Approve</Button>
-                      )}
-                      {s.status !== "rejected" && (
-                        <Button size="sm" variant="outline" className="text-[11px] h-7 flex-1 glass text-destructive border-destructive/30" disabled={updatingId === s.id} onClick={() => handleSubmissionStatus(s.id, "rejected")}>Reject</Button>
-                      )}
-                      {s.status !== "pending" && (
-                        <Button size="sm" variant="outline" className="text-[11px] h-7 glass" disabled={updatingId === s.id} onClick={() => handleSubmissionStatus(s.id, "pending")}>Reset</Button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {/* Desktop table */}
-              <div className="hidden md:block overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground border-b border-border/40">
-                      <th className="pb-3 pr-4">Seller</th>
-                      <th className="pb-3 pr-4">Car</th>
-                      <th className="pb-3 pr-4">Price</th>
-                      <th className="pb-3 pr-4">Submitted</th>
-                      <th className="pb-3 pr-4">Status</th>
-                      <th className="pb-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {submissionsList.map((s) => (
-                      <tr key={s.id} className="border-t border-border/20 hover:bg-secondary/20 transition-smooth">
-                        <td className="py-3 pr-4">
-                          <div className="font-medium">{s.name}</div>
-                          <div className="text-[11px] text-muted-foreground">{s.email}</div>
-                          {s.phone && <div className="text-[11px] text-muted-foreground">{s.phone}</div>}
-                        </td>
-                        <td className="py-3 pr-4">
-                          <div className="font-medium">{s.brand} {s.model}</div>
-                          <div className="text-[11px] text-muted-foreground">{s.year ?? "Year N/A"}</div>
-                          {s.notes && <div className="text-[11px] text-muted-foreground italic mt-0.5 max-w-[180px] truncate">{s.notes}</div>}
-                        </td>
-                        <td className="py-3 pr-4"><span className="text-xs font-display font-semibold">{s.price ? `EGP ${s.price}` : "—"}</span></td>
-                        <td className="py-3 pr-4"><span className="text-xs text-muted-foreground">{new Date(s.created_at).toLocaleDateString()}</span></td>
-                        <td className="py-3 pr-4">
-                          <Badge className={s.status === "approved" ? "bg-[var(--success)]/20 text-[var(--success)] border-0" : s.status === "rejected" ? "bg-destructive/20 text-destructive border-0" : "bg-yellow-500/20 text-yellow-400 border-0"}>{s.status}</Badge>
-                        </td>
-                        <td className="py-3 text-right">
-                          <div className="flex gap-1 justify-end">
-                            {s.status !== "approved" && <Button size="sm" variant="outline" className="text-[11px] h-7 glass text-[var(--success)] border-[var(--success)]/30 hover:border-[var(--success)]/60" disabled={updatingId === s.id} onClick={() => handleSubmissionStatus(s.id, "approved")}>Approve</Button>}
-                            {s.status !== "rejected" && <Button size="sm" variant="outline" className="text-[11px] h-7 glass text-destructive border-destructive/30 hover:border-destructive/60" disabled={updatingId === s.id} onClick={() => handleSubmissionStatus(s.id, "rejected")}>Reject</Button>}
-                            {s.status !== "pending" && <Button size="sm" variant="outline" className="text-[11px] h-7 glass" disabled={updatingId === s.id} onClick={() => handleSubmissionStatus(s.id, "pending")}>Reset</Button>}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Auction Entry Requests */}
-        <div className="mt-6 rounded-2xl bg-gradient-card border border-border/60 p-6">
-          <div className="flex items-center justify-between mb-5">
-            <div>
-              <h3 className="font-display font-semibold text-lg">{t("admin_entry_req")}</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">{t("admin_entry_sub")}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline">{entryRequestsList.length} {t("admin_total")}</Badge>
-              <Badge className="bg-yellow-500/20 text-yellow-400 border-0">
-                {entryRequestsList.filter((r) => r.status === "pending").length} {t("admin_pending")}
-              </Badge>
-            </div>
-          </div>
-
-          {/* Deposit Settings */}
-          <div className="mb-6 p-4 rounded-xl bg-secondary/40 border border-border/40">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-primary-glow mb-3">{t("admin_deposit_cfg")}</h4>
-            <div className="grid sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">{t("admin_deposit_amt")}</label>
-                <Input
-                  type="number"
-                  value={depositSettingsForm.depositAmount}
-                  onChange={(e) => setDepositSettingsForm((f) => ({ ...f, depositAmount: Number(e.target.value) }))}
-                  className="bg-background/50"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">{t("admin_pay_info")}</label>
-                <Input
-                  value={depositSettingsForm.paymentInfo}
-                  onChange={(e) => setDepositSettingsForm((f) => ({ ...f, paymentInfo: e.target.value }))}
-                  placeholder="e.g. Instapay: 01012345678 — APEXAuto"
-                  className="bg-background/50"
-                />
-              </div>
-            </div>
-            <Button
-              size="sm"
-              className="mt-3 bg-gradient-primary border-0 text-primary-foreground"
-              disabled={savingSettings}
-              onClick={handleSaveDepositSettings}
-            >
-              {savingSettings ? "…" : t("admin_save_settings")}
-            </Button>
-          </div>
-
-          {entryRequestsList.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-6 text-center">{t("admin_no_entries")}</p>
-          ) : (
-            <div className="space-y-2">
-              {entryRequestsList.map((req) => {
-                const isEntryExpanded = expandedEntryIds.has(req.id);
-                const isProofShown = shownProofIds.has(req.id);
-                const toggleEntry = () => setExpandedEntryIds((prev) => {
-                  const next = new Set(prev);
-                  next.has(req.id) ? next.delete(req.id) : next.add(req.id);
-                  return next;
-                });
-                const toggleProof = (e: React.MouseEvent) => {
-                  e.stopPropagation();
-                  setShownProofIds((prev) => {
-                    const next = new Set(prev);
-                    next.has(req.id) ? next.delete(req.id) : next.add(req.id);
-                    return next;
-                  });
-                };
-                return (
-                  <div key={req.id} className="rounded-xl border border-border/40 overflow-hidden bg-secondary/10">
-                    {/* Collapsible header row */}
-                    <button
-                      className="w-full flex items-center justify-between gap-3 p-4 text-left hover:bg-secondary/20 transition-smooth"
-                      onClick={toggleEntry}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="h-9 w-9 rounded-full bg-gradient-primary flex items-center justify-center text-sm font-bold text-primary-foreground shrink-0">
-                          {(req.user_name || "?")[0].toUpperCase()}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="font-medium text-sm">{req.user_name}</div>
-                          <div className="text-[11px] text-muted-foreground truncate">{req.car_title}</div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <Badge className={
-                          req.status === "approved" ? "bg-[var(--success)]/20 text-[var(--success)] border-0" :
-                          req.status === "rejected" ? "bg-destructive/20 text-destructive border-0" :
-                          "bg-yellow-500/20 text-yellow-400 border-0"
-                        }>{req.status}</Badge>
-                        {isEntryExpanded
-                          ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                          : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-                      </div>
-                    </button>
-
-                    {/* Expanded content */}
-                    {isEntryExpanded && (
-                      <div className="border-t border-border/30 p-4 space-y-3">
-                        {/* Details */}
-                        <div className="space-y-1 text-xs text-muted-foreground">
-                          <div className="font-medium text-foreground">{req.user_email}</div>
-                          <div>
-                            {t("admin_car_lbl")} <span className="text-foreground font-medium">{req.car_title}</span>
-                            <span className="ms-2">· {t("admin_deposit_lbl")} EGP {req.deposit_amount.toLocaleString()}</span>
-                            <span className="ms-2">· {new Date(req.created_at).toLocaleDateString()}</span>
-                          </div>
-                          {req.instapay_number && (
-                            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/20 text-xs mt-1">
-                              <span className="text-muted-foreground">{t("admin_refund_ip")}</span>
-                              <span className="font-semibold text-primary-glow">{req.instapay_number}</span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Proof image — hidden by default, toggled */}
-                        <div>
-                          <button
-                            onClick={toggleProof}
-                            className="flex items-center gap-1.5 text-xs text-primary-glow hover:text-primary transition-colors font-medium"
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                            {isProofShown ? t("admin_hide_proof") : t("admin_view_proof")}
-                          </button>
-                          {isProofShown && (
-                            <div className="mt-2">
-                              <img
-                                src={req.proof_image_url}
-                                alt="Payment proof"
-                                className="w-full max-h-64 object-contain rounded-xl border border-border/40 bg-black/20 cursor-zoom-in hover:opacity-90 transition-opacity"
-                                onClick={() => setLightboxUrl(req.proof_image_url)}
-                              />
-                              <p className="text-[10px] text-muted-foreground mt-1">{t("admin_click_full")}</p>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Actions */}
-                        {req.status === "pending" && (
-                          <div className="space-y-2">
-                            <Input
-                              placeholder={t("admin_reject_reason")}
-                              value={rejectionReason[req.id] ?? ""}
-                              onChange={(e) => setRejectionReason((r) => ({ ...r, [req.id]: e.target.value }))}
-                              className="bg-background/50 text-xs h-8"
-                            />
-                            <div className="flex gap-2">
-                              <Button
-                                size="sm"
-                                className="flex-1 bg-[var(--success)]/20 text-[var(--success)] border border-[var(--success)]/40 hover:bg-[var(--success)]/30"
-                                disabled={updatingEntryId === req.id}
-                                onClick={() => handleEntryStatus(req, "approved")}
-                              >
-                                {t("admin_approve_entry")}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="flex-1 glass text-destructive border-destructive/30 hover:border-destructive/60"
-                                disabled={updatingEntryId === req.id}
-                                onClick={() => handleEntryStatus(req, "rejected")}
-                              >
-                                {t("admin_reject")}
-                              </Button>
-                            </div>
-                          </div>
-                        )}
-                        {req.status === "rejected" && req.rejection_reason && (
-                          <p className="text-xs text-destructive/80 italic">Reason: {req.rejection_reason}</p>
-                        )}
-                        {req.status !== "pending" && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="glass text-xs h-7"
-                            disabled={updatingEntryId === req.id}
-                            onClick={() => handleEntryStatus(req, "pending")}
-                          >
-                            {t("admin_reset_pending")}
-                          </Button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-        </>
+          <>
+            <AdminEntryRequestsSection initialDepositSettings={initialDepositSettings} />
+            <AdminRefundsPanel />
+          </>
         )}
 
         {adminTab === "people" && (
         <>
-        {/* User Management Section */}
-        <div className="rounded-2xl bg-gradient-card border border-border/60 p-6">
-          <div className="flex items-center justify-between mb-5">
-            <div>
-              <h3 className="font-display font-semibold text-lg">{t("admin_reg_users")}</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">{t("admin_reg_users_sub")}</p>
-            </div>
-            <Badge variant="outline">{registeredUsers} users</Badge>
-          </div>
-          {users.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-6 text-center">{t("admin_no_users")}</p>
-          ) : (
-            <>
-              {/* Mobile cards */}
-              <div className="md:hidden space-y-2">
-                {users.map((u: DbUser) => (
-                  <div key={u.id} className="flex items-center gap-3 rounded-xl border border-border/30 bg-secondary/10 px-3 py-2.5">
-                    <div className="h-8 w-8 rounded-full bg-gradient-primary flex items-center justify-center text-[11px] font-bold text-primary-foreground shrink-0">
-                      {u.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="font-medium text-sm truncate">{u.name}</div>
-                      <div className="text-[11px] text-muted-foreground truncate">{u.email}</div>
-                    </div>
-                    <div className="text-[10px] text-muted-foreground shrink-0">{new Date(u.created_at).toLocaleDateString()}</div>
-                  </div>
-                ))}
-              </div>
-              {/* Desktop table */}
-              <div className="hidden md:block overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground border-b border-border/40">
-                      <th className="pb-3 pr-4">Name</th>
-                      <th className="pb-3 pr-4">Email</th>
-                      <th className="pb-3 pr-4">Phone</th>
-                      <th className="pb-3 text-right">Joined</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {users.map((u: DbUser) => (
-                      <tr key={u.id} className="border-t border-border/20 hover:bg-secondary/20 transition-smooth">
-                        <td className="py-3 pr-4">
-                          <div className="flex items-center gap-2">
-                            <div className="h-7 w-7 rounded-full bg-gradient-primary flex items-center justify-center text-[10px] font-bold text-primary-foreground shrink-0">
-                              {u.name.charAt(0).toUpperCase()}
-                            </div>
-                            <span className="font-medium">{u.name}</span>
-                          </div>
-                        </td>
-                        <td className="py-3 pr-4 text-muted-foreground">{u.email}</td>
-                        <td className="py-3 pr-4 text-muted-foreground text-xs">{u.phone ?? "—"}</td>
-                        <td className="py-3 text-right text-xs text-muted-foreground">{new Date(u.created_at).toLocaleDateString()}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </div>
+        <AdminUsersSection />
 
-        {/* Buyer Chat Conversations — WhatsApp style */}
+        {/* Buyer Chat — link to full page */}
         <div className="mt-6 rounded-2xl bg-gradient-card border border-border/60 overflow-hidden">
-          <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-border/40">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-4 border-b border-border/40">
             <div>
               <h3 className="font-display font-semibold text-lg flex items-center gap-2">
                 <MessageCircle className="h-5 w-5 text-primary-glow" /> {t("admin_messages")}
               </h3>
               <p className="text-xs text-muted-foreground mt-0.5">{t("admin_messages_sub")}</p>
             </div>
-            <Badge variant="outline">{chatsList.length} {t("admin_conversations")}</Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline">{chatsList.length} {t("admin_conversations")}</Badge>
+              <Button asChild size="sm" className="bg-gradient-primary border-0 text-primary-foreground">
+                <Link to="/ops-x7k9m2/chat">{t("admin_open_full_chat")}</Link>
+              </Button>
+            </div>
           </div>
           {chatsList.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">{t("admin_no_msgs")}</p>
           ) : (
-            <div className="divide-y divide-border/20">
-              {chatsList.map((convo) => {
+            <div className="divide-y divide-border/20 max-h-80 overflow-y-auto">
+              {chatsList.slice(0, 8).map((convo) => {
                 const key = `${convo.car_id}::${convo.buyer_email}`;
-                const isExpanded = expandedChat === key;
-                const hasUnread = convo.unread > 0;
                 const displayName = convo.buyer_name || convo.buyer_email;
-                const initial = displayName[0].toUpperCase();
-                const avatarColors = ["bg-purple-600", "bg-blue-600", "bg-teal-600", "bg-orange-600", "bg-pink-600", "bg-indigo-600", "bg-green-700", "bg-rose-600"];
-                const avatarColor = avatarColors[initial.charCodeAt(0) % avatarColors.length];
-                const lastDate = new Date(convo.last_at);
-                // Use the `now` state (null on SSR, set after hydration) to avoid hydration mismatch
-                const diffH = now ? Math.floor((now - lastDate.getTime()) / 3_600_000) : 0;
-                const timeStr = !now
-                  ? ""
-                  : diffH < 1
-                  ? lastDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                  : diffH < 24 ? `${diffH}h`
-                  : lastDate.toLocaleDateString([], { month: "short", day: "numeric" });
                 return (
-                  <div key={key}>
-                    {/* Contact row */}
-                    <button
-                      className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/10 transition-smooth text-left"
-                      onClick={() => setExpandedChat(isExpanded ? null : key)}
-                    >
-                      {/* Avatar with online dot if unread */}
-                      <div className="relative shrink-0">
-                        <div className={`h-12 w-12 rounded-full flex items-center justify-center text-base font-bold text-white ${avatarColor}`}>
-                          {initial}
-                        </div>
-                        {hasUnread && (
-                          <span className="absolute -top-0.5 -end-0.5 h-4 w-4 rounded-full bg-green-500 border-2 border-background" />
-                        )}
-                      </div>
-                      {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className={`text-sm truncate ${hasUnread ? "font-bold" : "font-medium"}`}>{displayName}</span>
-                          <span className={`text-[10px] shrink-0 ${hasUnread ? "text-green-400 font-semibold" : "text-muted-foreground"}`}>{timeStr}</span>
-                        </div>
-                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 mt-0.5 max-w-[140px] truncate">{convo.car_title}</Badge>
-                        <p className={`text-xs mt-0.5 truncate ${hasUnread ? "text-foreground/80 font-medium" : "text-muted-foreground"}`}>{convo.last_message}</p>
-                      </div>
-                      {/* Unread count OR chevron */}
-                      {hasUnread ? (
-                        <div className="h-5 min-w-5 px-1 rounded-full bg-green-500 flex items-center justify-center text-[10px] font-bold text-white shrink-0">
-                          {convo.unread}
-                        </div>
-                      ) : (
-                        isExpanded
-                          ? <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
-                          : <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
-                      )}
-                    </button>
-
-                    {/* Expanded chat thread */}
-                    {isExpanded && (
-                      <div className="bg-[#07071a] border-t border-border/20">
-                        {/* Messages */}
-                        <div className="space-y-2 max-h-72 overflow-y-auto p-4">
-                          {convo.messages.map((m) => (
-                            <div key={m.id} className={`flex ${m.sender_role === "admin" ? "justify-end" : "justify-start"}`}>
-                              <div className={`max-w-[78%] px-3 py-2 rounded-2xl text-sm ${
-                                m.sender_role === "admin"
-                                  ? "bg-gradient-primary text-primary-foreground rounded-br-none"
-                                  : "bg-secondary/60 border border-border/40 rounded-bl-none"
-                              }`}>
-                                {m.message}
-                                <div className="text-[9px] mt-0.5 opacity-60 text-end">
-                                  {m.sender_role === "admin" ? t("admin_you_admin") : convo.buyer_name}
-                                  {" · "}{new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                        {/* Reply bar */}
-                        <div className="flex gap-2 p-3 border-t border-border/20 bg-background/20">
-                          <input
-                            value={chatReplyText[key] ?? ""}
-                            onChange={(e) => setChatReplyText((r) => ({ ...r, [key]: e.target.value }))}
-                            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAdminReply(convo); } }}
-                            placeholder={t("admin_reply_ph")}
-                            className="flex-1 bg-background/50 border border-border rounded-full px-4 py-2 text-sm outline-none focus:border-primary transition-colors"
-                          />
-                          <Button
-                            size="sm"
-                            className="bg-gradient-primary border-0 text-primary-foreground rounded-full w-9 h-9 p-0 shrink-0"
-                            disabled={sendingReply === key || !chatReplyText[key]?.trim()}
-                            onClick={() => handleAdminReply(convo)}
-                          >
-                            <Send className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  <Link
+                    key={key}
+                    to="/ops-x7k9m2/chat"
+                    search={{ car: convo.car_id, buyer: convo.buyer_email }}
+                    className="flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/10 transition-smooth"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">{displayName}</div>
+                      <p className="text-[10px] text-muted-foreground truncate">{convo.car_title}</p>
+                      <p className="text-xs text-muted-foreground truncate mt-0.5">{convo.last_message}</p>
+                    </div>
+                  </Link>
                 );
               })}
             </div>
@@ -1584,43 +892,22 @@ function AdminPage() {
       </div>
       <Footer />
 
-      {/* Proof Image Lightbox */}
-      {lightboxUrl && (
-        <div
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/92 backdrop-blur-sm p-4"
-          onClick={() => setLightboxUrl(null)}
-        >
-          <img
-            src={lightboxUrl}
-            alt="Payment proof"
-            className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          />
-          <button
-            className="absolute top-4 end-4 h-10 w-10 rounded-full glass border border-border/60 flex items-center justify-center hover:bg-secondary/60 transition-colors"
-            onClick={() => setLightboxUrl(null)}
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-      )}
-
       {/* Full-screen Car Form Drawer */}
       {showForm && (
         <div
-          className={`fixed inset-0 z-50 flex justify-end transition-opacity duration-300 ${drawerVisible ? "opacity-100" : "opacity-0"}`}
+          className={`fixed inset-0 z-[80] flex justify-end transition-opacity duration-300 ${drawerVisible ? "opacity-100" : "opacity-0"}`}
           onClick={closeForm}
         >
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
           <div
-            className={`relative w-full max-w-2xl h-full bg-background border-l border-border/60 shadow-elegant flex flex-col transition-transform duration-300 ease-out ${drawerVisible ? "translate-x-0" : "translate-x-full"}`}
+            className={`relative w-full max-w-2xl h-dvh max-h-dvh bg-background border-l border-border/60 shadow-elegant flex flex-col min-h-0 transition-transform duration-300 ease-out ${drawerVisible ? "translate-x-0" : "translate-x-full"}`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Drawer header */}
-            <div className="shrink-0 border-b border-border/40 px-6 py-4 flex items-center justify-between bg-background/95 backdrop-blur-sm">
+            <div className="shrink-0 border-b border-border/40 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between bg-background/95 backdrop-blur-sm">
               <div>
-                <h2 className="font-display font-bold text-lg">{editingCar ? "Edit Car" : "Add New Car"}</h2>
-                <p className="text-xs text-muted-foreground mt-0.5">{editingCar ? `Editing: ${editingCar.title}` : "Complete all sections for best results"}</p>
+                <h2 className="font-display font-bold text-lg">{editingCar ? t("admin_form_edit") : t("admin_form_add")}</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">{editingCar ? t("admin_form_editing", { title: editingCar.title }) : t("admin_form_subtitle")}</p>
               </div>
               <button onClick={closeForm} className="h-8 w-8 rounded-full glass flex items-center justify-center">
                 <X className="h-4 w-4" />
@@ -1629,96 +916,92 @@ function AdminPage() {
 
             {/* Tab bar */}
             <div className="shrink-0 flex border-b border-border/40 bg-background/95 overflow-x-auto">
-              {TABS.map((t) => (
+              {TABS.map((tabItem) => (
                 <button
-                  key={t.id}
-                  onClick={() => setTab(t.id)}
+                  key={tabItem.id}
+                  onClick={() => setTab(tabItem.id)}
                   className={`flex items-center gap-1.5 px-4 py-3 text-xs font-medium whitespace-nowrap transition-colors border-b-2 ${
-                    tab === t.id
+                    tab === tabItem.id
                       ? "border-primary text-primary"
                       : "border-transparent text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  <t.icon className="h-3.5 w-3.5" />
-                  {t.label}
+                  <tabItem.icon className="h-3.5 w-3.5" />
+                  {t(tabItem.labelKey)}
                 </button>
               ))}
             </div>
 
             {/* Scrollable body */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-6 space-y-6 pb-6">
 
               {/* ── BASIC INFO ── */}
               {tab === "basic" && (
                 <>
-                  <Section title="Identity">
+                  <Section tKey="admin_sec_identity">
                     <div className="grid grid-cols-2 gap-3">
                       <div className="col-span-2">
-                        <Label>Title *</Label>
+                        <Label tKey="admin_lbl_title" />
                         <Input value={form.title} onChange={(e) => set("title", e.target.value)} placeholder="McLaren GT Coupe 2022" className="bg-background/50" />
                       </div>
                       <div>
-                        <Label>Brand *</Label>
+                        <Label tKey="admin_lbl_brand" />
                         <Input value={form.brand} onChange={(e) => set("brand", e.target.value)} placeholder="McLaren" className="bg-background/50" />
                       </div>
                       <div>
-                        <Label>Model *</Label>
+                        <Label tKey="admin_lbl_model" />
                         <Input value={form.model} onChange={(e) => set("model", e.target.value)} placeholder="GT" className="bg-background/50" />
                       </div>
                       <div>
-                        <Label>Year *</Label>
+                        <Label tKey="admin_lbl_year" />
                         <Input type="number" value={form.year} onChange={(e) => set("year", Number(e.target.value))} className="bg-background/50" />
                       </div>
                       <div>
-                        <Label>Trim / Edition</Label>
+                        <Label tKey="admin_lbl_trim" />
                         <Input value={form.trim ?? ""} onChange={(e) => set("trim", e.target.value || null)} placeholder="Sport, Black Pack…" className="bg-background/50" />
                       </div>
                       <div>
-                        <Label>VIN</Label>
+                        <Label tKey="admin_lbl_vin" />
                         <Input value={form.vin ?? ""} onChange={(e) => set("vin", e.target.value || null)} placeholder="17-char VIN" className="bg-background/50" />
                       </div>
                       <div>
-                        <Label>Plate Status</Label>
+                        <Label tKey="admin_lbl_plate" />
                         <select value={form.plate_status ?? "Clean"} onChange={(e) => set("plate_status", e.target.value)} className={sel()}>
                           {["Clean", "Salvage", "Rebuilt", "Export Only", "Unknown"].map((v) => <option key={v}>{v}</option>)}
                         </select>
                       </div>
                       <div>
-                        <Label>Color</Label>
+                        <Label tKey="admin_lbl_color" />
                         <Input value={form.color} onChange={(e) => set("color", e.target.value)} placeholder="Volcano Orange" className="bg-background/50" />
                       </div>
                     </div>
                   </Section>
 
-                  <Section title="Location & Dealer">
+                  <Section tKey="admin_sec_location">
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <Label>Dealership *</Label>
-                        <Input value={form.dealership} onChange={(e) => set("dealership", e.target.value)} placeholder="Apex Motors Cairo" className="bg-background/50" />
-                      </div>
-                      <div>
-                        <Label>City *</Label>
+                        <Label tKey="admin_lbl_city" />
                         <Input value={form.city} onChange={(e) => set("city", e.target.value)} placeholder="Cairo" className="bg-background/50" />
                       </div>
                     </div>
                   </Section>
 
-                  <Section title="Pricing">
+                  <Section tKey="admin_sec_pricing">
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <Label>Base Price (EGP) *</Label>
+                        <Label tKey="admin_lbl_price" />
                         <Input type="number" value={form.price} onChange={(e) => set("price", Number(e.target.value))} className="bg-background/50" />
                       </div>
                       <div>
-                        <Label>Buy Now Price (EGP)</Label>
+                        <Label tKey="admin_lbl_buy_now" />
                         <Input type="number" value={form.buy_now_price ?? ""} onChange={(e) => set("buy_now_price", e.target.value ? Number(e.target.value) : null)} placeholder="Optional instant purchase" className="bg-background/50" />
                       </div>
                     </div>
                   </Section>
 
-                  <Section title="Description">
+                  <Section tKey="admin_sec_description">
                     <div>
-                      <Label>Full Description</Label>
+                      <Label tKey="admin_lbl_description" />
                       <textarea
                         value={form.description ?? ""}
                         onChange={(e) => set("description", e.target.value || null)}
@@ -1729,19 +1012,19 @@ function AdminPage() {
                     </div>
                   </Section>
 
-                  <Section title="Flags">
+                  <Section tKey="admin_sec_flags">
                     <div className="flex flex-wrap gap-4">
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={form.is_new} onChange={(e) => set("is_new", e.target.checked)} className="accent-primary w-4 h-4 rounded" />
-                        <span className="text-sm flex items-center gap-1"><CarIcon className="h-3.5 w-3.5 text-green-400" /> Brand new car (صفر كيلو)</span>
+                        <span className="text-sm flex items-center gap-1"><CarIcon className="h-3.5 w-3.5 text-green-400" /> {t("admin_flag_new")}</span>
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={form.featured} onChange={(e) => set("featured", e.target.checked)} className="accent-primary w-4 h-4 rounded" />
-                        <span className="text-sm flex items-center gap-1"><Star className="h-3.5 w-3.5 text-yellow-400" /> Featured listing</span>
+                        <span className="text-sm flex items-center gap-1"><Star className="h-3.5 w-3.5 text-yellow-400" /> {t("admin_flag_featured")}</span>
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={form.is_live} onChange={(e) => set("is_live", e.target.checked)} className="accent-primary w-4 h-4 rounded" />
-                        <span className="text-sm flex items-center gap-1"><Radio className="h-3.5 w-3.5 text-[var(--live)]" /> Live auction</span>
+                        <span className="text-sm flex items-center gap-1"><Radio className="h-3.5 w-3.5 text-[var(--live)]" /> {t("admin_flag_live")}</span>
                       </label>
                     </div>
                   </Section>
@@ -1751,51 +1034,51 @@ function AdminPage() {
               {/* ── MECHANICAL ── */}
               {tab === "mechanical" && (
                 <>
-                  <Section title="Engine & Power">
+                  <Section tKey="admin_sec_engine">
                     <div className="grid grid-cols-2 gap-3">
                       <div className="col-span-2">
-                        <Label>Engine</Label>
+                        <Label tKey="admin_lbl_engine" />
                         <Input value={form.engine ?? ""} onChange={(e) => set("engine", e.target.value || null)} placeholder="4.0L Twin-Turbo V8" className="bg-background/50" />
                       </div>
                       <div>
-                        <Label>Horsepower</Label>
+                        <Label tKey="admin_lbl_hp" />
                         <Input type="number" value={form.hp ?? ""} onChange={(e) => set("hp", e.target.value ? Number(e.target.value) : null)} placeholder="620" className="bg-background/50" />
                       </div>
                       <div>
-                        <Label>Fuel Type</Label>
+                        <Label tKey="admin_lbl_fuel" />
                         <select value={form.fuel} onChange={(e) => set("fuel", e.target.value)} className={sel()}>
                           {["Petrol", "Diesel", "Electric", "Hybrid", "Plug-in Hybrid"].map((v) => <option key={v}>{v}</option>)}
                         </select>
                       </div>
                       {(form.fuel === "Electric" || form.fuel === "Hybrid" || form.fuel === "Plug-in Hybrid") && (
                         <div>
-                          <Label>Battery Health (%)</Label>
+                          <Label tKey="admin_lbl_battery_health" />
                           <Input type="number" min={0} max={100} value={form.battery_health ?? ""} onChange={(e) => set("battery_health", e.target.value ? Number(e.target.value) : null)} placeholder="95" className="bg-background/50" />
                         </div>
                       )}
                     </div>
                   </Section>
 
-                  <Section title="Drivetrain & Specs">
+                  <Section tKey="admin_sec_drivetrain">
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <Label>Transmission</Label>
+                        <Label tKey="admin_lbl_transmission" />
                         <select value={form.transmission} onChange={(e) => set("transmission", e.target.value)} className={sel()}>
                           {["Automatic", "Manual", "CVT", "DCT", "PDK"].map((v) => <option key={v}>{v}</option>)}
                         </select>
                       </div>
                       <div>
-                        <Label>Drivetrain</Label>
+                        <Label tKey="admin_lbl_drivetrain" />
                         <select value={form.drivetrain ?? "RWD"} onChange={(e) => set("drivetrain", e.target.value)} className={sel()}>
                           {["RWD", "FWD", "AWD", "4WD", "4x4"].map((v) => <option key={v}>{v}</option>)}
                         </select>
                       </div>
                       <div>
-                        <Label>Mileage (km)</Label>
+                        <Label tKey="admin_lbl_mileage" />
                         <Input type="number" value={form.mileage} onChange={(e) => set("mileage", Number(e.target.value))} className="bg-background/50" />
                       </div>
                       <div>
-                        <Label>Seats</Label>
+                        <Label tKey="admin_lbl_seats" />
                         <Input type="number" value={form.seats} onChange={(e) => set("seats", Number(e.target.value))} className="bg-background/50" />
                       </div>
                     </div>
@@ -2019,9 +1302,9 @@ function AdminPage() {
               {/* ── MEDIA ── */}
               {tab === "media" && (
                 <>
-                  <Section title="Primary Image">
+                  <Section tKey="admin_sec_primary_img">
                     <div>
-                      <Label>Main Image URL or Upload</Label>
+                      <Label tKey="admin_lbl_main_image" />
                       <div className="flex gap-2">
                         <Input value={form.image_url ?? ""} onChange={(e) => set("image_url", e.target.value || null)} placeholder="https://..." className="bg-background/50 flex-1" />
                         <Button
@@ -2030,7 +1313,7 @@ function AdminPage() {
                           className="glass shrink-0"
                           disabled={uploadingImage}
                           onClick={() => mainImgRef.current?.click()}
-                          title="Upload from file"
+                          title={t("admin_lbl_upload_file")}
                         >
                           <Upload className="h-4 w-4" />
                         </Button>
@@ -2048,12 +1331,12 @@ function AdminPage() {
                     </div>
                   </Section>
 
-                  <Section title="Image Gallery">
+                  <Section tKey="admin_sec_gallery">
                     <div className="flex gap-2">
                       <Input
                         value={mediaInput.image}
                         onChange={(e) => setMediaInput((m) => ({ ...m, image: e.target.value }))}
-                        placeholder="Image URL…"
+                        placeholder={t("admin_lbl_image_url")}
                         className="bg-background/50 flex-1"
                         onKeyDown={(e) => e.key === "Enter" && addMedia("image")}
                       />
@@ -2086,7 +1369,7 @@ function AdminPage() {
                           className="w-full h-32 object-cover"
                           onError={(e) => { (e.currentTarget as HTMLImageElement).style.opacity = "0.3"; }}
                         />
-                        <div className="absolute bottom-1 start-2 text-xs text-white/70 bg-black/50 px-2 py-0.5 rounded-full">Preview — press + to add</div>
+                        <div className="absolute bottom-1 start-2 text-xs text-white/70 bg-black/50 px-2 py-0.5 rounded-full">{t("admin_preview_add")}</div>
                       </div>
                     )}
                     {form.images.length > 0 && (
@@ -2098,12 +1381,12 @@ function AdminPage() {
                     )}
                   </Section>
 
-                  <Section title="Videos">
+                  <Section tKey="admin_sec_videos">
                     <div className="flex gap-2">
                       <Input
                         value={mediaInput.video}
                         onChange={(e) => setMediaInput((m) => ({ ...m, video: e.target.value }))}
-                        placeholder="YouTube / video URL…"
+                        placeholder={t("admin_lbl_video_url")}
                         className="bg-background/50 flex-1"
                         onKeyDown={(e) => e.key === "Enter" && addMedia("video")}
                       />
@@ -2120,19 +1403,17 @@ function AdminPage() {
                     ))}
                   </Section>
 
-                  <Section title="PDF Documents">
-                    <div className="flex gap-2">
-                      <Input
-                        value={mediaInput.doc}
-                        onChange={(e) => setMediaInput((m) => ({ ...m, doc: e.target.value }))}
-                        placeholder="PDF URL (inspection report, service record…)"
-                        className="bg-background/50 flex-1"
-                        onKeyDown={(e) => e.key === "Enter" && addMedia("doc")}
-                      />
-                      <Button variant="outline" className="glass shrink-0" onClick={() => addMedia("doc")}>
-                        <Plus className="h-4 w-4" />
-                      </Button>
-                    </div>
+                  <Section tKey="admin_sec_pdfs">
+                    <input ref={pdfInputRef} type="file" accept="application/pdf,.pdf" className="hidden" onChange={(e) => handleUploadPdf(e.target.files?.[0])} />
+                    <Button
+                      variant="outline"
+                      className="glass gap-1.5 w-full"
+                      disabled={uploadingPdf}
+                      onClick={() => pdfInputRef.current?.click()}
+                    >
+                      <Upload className="h-4 w-4" />
+                      {uploadingPdf ? t("loading_text") : t("admin_upload_pdf")}
+                    </Button>
                     {form.documents.map((url, i) => (
                       <div key={i} className="flex items-center justify-between gap-2 mt-1.5 px-3 py-2 rounded-lg bg-secondary/20 border border-border/30">
                         <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -2147,40 +1428,40 @@ function AdminPage() {
               {/* ── AUCTION ── */}
               {tab === "auction" && (
                 <>
-                  <Section title="Auction Pricing">
+                  <Section tKey="admin_sec_auction_pricing">
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <Label>Starting Bid (EGP)</Label>
+                        <Label tKey="admin_lbl_starting" />
                         <Input type="number" value={form.starting_price ?? ""} onChange={(e) => set("starting_price", e.target.value ? Number(e.target.value) : null)} placeholder="Opening bid amount" className="bg-background/50" />
                       </div>
                       <div>
-                        <Label>Current Bid (EGP)</Label>
+                        <Label tKey="admin_lbl_current_bid" />
                         <Input type="number" value={form.current_bid ?? ""} onChange={(e) => set("current_bid", e.target.value ? Number(e.target.value) : null)} placeholder="Leave blank = use starting" className="bg-background/50" />
                       </div>
                       <div>
-                        <Label>Minimum Raise (EGP)</Label>
+                        <Label tKey="admin_lbl_min_raise" />
                         <Input type="number" value={form.min_raise} onChange={(e) => set("min_raise", Number(e.target.value))} className="bg-background/50" />
                       </div>
                       <div>
-                        <Label>Reserve Price (EGP)</Label>
+                        <Label tKey="admin_lbl_reserve" />
                         <Input type="number" value={form.reserve_price ?? ""} onChange={(e) => set("reserve_price", e.target.value ? Number(e.target.value) : null)} placeholder="Min. price to sell" className="bg-background/50" />
                       </div>
                       <div>
-                        <Label>Buy Now Price (EGP)</Label>
+                        <Label tKey="admin_lbl_buy_now" />
                         <Input type="number" value={form.buy_now_price ?? ""} onChange={(e) => set("buy_now_price", e.target.value ? Number(e.target.value) : null)} placeholder="Instant purchase price" className="bg-background/50" />
                       </div>
                     </div>
                     {form.reserve_price && (
                       <div className="flex items-start gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2.5 mt-2">
-                        <Shield className="h-4 w-4 text-blue-400 shrink-0 mt-0.5" />
-                        <p className="text-xs text-blue-300">Reserve price is hidden from bidders. The car will only sell if bids reach this amount.</p>
+                        <Shield className="h-4 w-4 text-primary-glow shrink-0 mt-0.5" />
+                        <p className="text-xs text-muted-foreground">{t("admin_reserve_hint")}</p>
                       </div>
                     )}
                   </Section>
 
-                  <Section title="Auction End Time">
+                  <Section tKey="admin_sec_auction_end">
                     <div>
-                      <Label>End Date & Time</Label>
+                      <Label tKey="admin_lbl_end_time" />
                       <Input
                         type="datetime-local"
                         value={endsAtDisplay}
@@ -2189,16 +1470,16 @@ function AdminPage() {
                       />
                       {form.ends_at && (
                         <p className="text-xs text-muted-foreground mt-1">
-                          Ends {new Date(form.ends_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}
+                          {t("admin_ends_prefix")} {new Date(form.ends_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}
                           {now && form.ends_at > now
-                            ? ` — in ${Math.round((form.ends_at - now) / 60000)} minutes`
-                            : " — ALREADY ENDED"}
+                            ? ` ${t("admin_in_minutes").replace("{n}", String(Math.round((form.ends_at - now) / 60000)))}`
+                            : ` ${t("admin_already_ended")}`}
                         </p>
                       )}
                     </div>
 
                     <div>
-                      <Label>Quick Timers</Label>
+                      <Label tKey="admin_quick_timers" />
                       <div className="flex flex-wrap gap-2 mt-1">
                         {[
                           { label: "15 min", val: 15 },
@@ -2225,26 +1506,26 @@ function AdminPage() {
                           className="px-3 py-1.5 rounded-lg text-xs font-medium glass border border-border/40 hover:border-destructive/50 hover:text-destructive transition-colors"
                         >
                           <RotateCcw className="h-3 w-3 inline mr-1" />
-                          Clear
+                          {t("admin_clear")}
                         </button>
                       </div>
                     </div>
                   </Section>
 
-                  <Section title="Auction Status">
+                  <Section tKey="admin_sec_auction_status">
                     <div className="grid grid-cols-2 gap-3">
                       <label className="flex items-center gap-3 p-3 rounded-xl border border-border/40 cursor-pointer hover:border-primary/40 transition-colors">
                         <input type="checkbox" checked={form.is_live} onChange={(e) => set("is_live", e.target.checked)} className="accent-primary w-4 h-4" />
                         <div>
-                          <div className="text-sm font-medium flex items-center gap-1"><Radio className="h-3.5 w-3.5 text-[var(--live)]" /> Go Live</div>
-                          <div className="text-xs text-muted-foreground">Open for bidding now</div>
+                          <div className="text-sm font-medium flex items-center gap-1"><Radio className="h-3.5 w-3.5 text-[var(--live)]" /> {t("admin_go_live")}</div>
+                          <div className="text-xs text-muted-foreground">{t("admin_go_live_hint")}</div>
                         </div>
                       </label>
                       <label className="flex items-center gap-3 p-3 rounded-xl border border-border/40 cursor-pointer hover:border-primary/40 transition-colors">
                         <input type="checkbox" checked={form.featured} onChange={(e) => set("featured", e.target.checked)} className="accent-primary w-4 h-4" />
                         <div>
-                          <div className="text-sm font-medium flex items-center gap-1"><Zap className="h-3.5 w-3.5 text-yellow-400" /> Boost Listing</div>
-                          <div className="text-xs text-muted-foreground">Show on homepage hero</div>
+                          <div className="text-sm font-medium flex items-center gap-1"><Zap className="h-3.5 w-3.5 text-yellow-400" /> {t("admin_boost_listing")}</div>
+                          <div className="text-xs text-muted-foreground">{t("admin_boost_hint")}</div>
                         </div>
                       </label>
                     </div>
@@ -2253,21 +1534,21 @@ function AdminPage() {
               )}
             </div>
 
-            {/* Drawer footer */}
-            <div className="shrink-0 border-t border-border/40 px-6 py-4 flex items-center justify-between gap-3 bg-background/95">
-              <div className="flex gap-1">
-                {TABS.map((t, i) => (
+            {/* Drawer footer — always visible above mobile chrome */}
+            <div className="shrink-0 border-t border-border/40 px-4 sm:px-6 py-3 sm:py-4 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-background/95 backdrop-blur-sm pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
+              <div className="hidden sm:flex gap-1">
+                {TABS.map((tabItem) => (
                   <button
-                    key={t.id}
-                    onClick={() => setTab(t.id)}
-                    className={`h-1.5 rounded-full transition-all ${tab === t.id ? "w-6 bg-primary" : "w-1.5 bg-border"}`}
+                    key={tabItem.id}
+                    onClick={() => setTab(tabItem.id)}
+                    className={`h-1.5 rounded-full transition-all ${tab === tabItem.id ? "w-6 bg-primary" : "w-1.5 bg-border"}`}
                   />
                 ))}
               </div>
-              <div className="flex gap-2">
-                <Button variant="outline" className="glass" onClick={closeForm}>Cancel</Button>
-                <Button className="bg-gradient-primary border-0 text-primary-foreground min-w-[100px]" onClick={handleSave} disabled={saving}>
-                  {saving ? "Saving…" : editingCar ? "Save Changes" : "Add Car"}
+              <div className="flex gap-2 w-full sm:w-auto">
+                <Button variant="outline" className="glass flex-1 sm:flex-none" onClick={closeForm}>{t("admin_cancel")}</Button>
+                <Button className="bg-gradient-primary border-0 text-primary-foreground flex-1 sm:flex-none sm:min-w-[100px]" onClick={handleSave} disabled={saving}>
+                  {saving ? t("common_saving") : editingCar ? t("admin_save_changes") : t("admin_add_car")}
                 </Button>
               </div>
             </div>
@@ -2297,7 +1578,7 @@ function AdminPage() {
                 <Radio className="h-4 w-4 text-[var(--live)]" />
               </div>
               <div>
-                <h3 id="go-live-title" className="font-display font-semibold text-base">Go Live</h3>
+                <h3 id="go-live-title" className="font-display font-semibold text-base">{t("admin_go_live_title")}</h3>
                 <p className="text-xs text-muted-foreground truncate max-w-[200px]">{goLiveTarget.title}</p>
               </div>
               <button
@@ -2313,7 +1594,7 @@ function AdminPage() {
             <div className="space-y-3 mb-5">
               <div>
                 <label htmlFor="go-live-ends-at" className="text-xs font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
-                  Auction End Date &amp; Time
+                  {t("admin_auction_end_dt")}
                 </label>
                 <input
                   id="go-live-ends-at"
@@ -2324,7 +1605,7 @@ function AdminPage() {
                 />
                 {goLiveEndsAt && (
                   <p className="text-[11px] text-muted-foreground mt-1.5">
-                    Ends <span className="text-foreground font-medium">
+                    {t("admin_ends_prefix")} <span className="text-foreground font-medium">
                       {new Date(goLiveEndsAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}
                     </span>
                   </p>
@@ -2333,7 +1614,7 @@ function AdminPage() {
 
               {/* Quick presets */}
               <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Quick Presets</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5">{t("admin_quick_presets")}</p>
                 <div className="flex flex-wrap gap-1.5">
                   {[
                     { label: "1h", minutes: 60 },
@@ -2360,7 +1641,7 @@ function AdminPage() {
             {/* Actions */}
             <div className="flex gap-2">
               <Button variant="outline" className="glass flex-1" onClick={() => setGoLiveTarget(null)}>
-                Cancel
+                {t("admin_cancel")}
               </Button>
               <Button
                 className="flex-1 bg-[var(--live)] hover:bg-[var(--live)]/90 border-0 text-white gap-1.5"
@@ -2368,7 +1649,7 @@ function AdminPage() {
                 disabled={!goLiveEndsAt || goLiveConfirming}
               >
                 <Radio className="h-3.5 w-3.5" />
-                {goLiveConfirming ? "Going Live…" : "Go Live"}
+                {goLiveConfirming ? t("admin_go_live_confirm") : t("admin_go_live")}
               </Button>
             </div>
           </div>

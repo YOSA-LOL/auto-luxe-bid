@@ -5,33 +5,27 @@ import { Footer } from "@/components/layout/Footer";
 import { CarCard } from "@/components/CarCard";
 import { getCarsFromDb, markExpiredAuctions } from "@/lib/cars.server";
 import { dbCarToApp } from "@/lib/types";
-import { formatNumber, formatPrice } from "@/lib/mock-data";
 import { Input } from "@/components/ui/input";
-import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Search, SlidersHorizontal, X, ArrowUpDown, GitCompare } from "lucide-react";
+import { Search, SlidersHorizontal, X, ArrowUpDown } from "lucide-react";
 import { useLanguage } from "@/lib/language";
-import { getCompareIds, clearCompare, removeFromCompare } from "@/lib/compare";
+import { useThemeMode } from "@/lib/theme-mode";
+import { PageMeta } from "@/components/PageMeta";
 
 const PAGE_SIZE = 12;
+const PRICE_CEILING = 100_000_000;
 
 type SortKey = "newest" | "price_asc" | "price_desc" | "mileage_asc" | "year_desc";
-const SORT_OPTIONS: { key: SortKey; label: string }[] = [
-  { key: "newest", label: "Newest" },
-  { key: "price_asc", label: "Price: Low to High" },
-  { key: "price_desc", label: "Price: High to Low" },
-  { key: "mileage_asc", label: "Lowest Mileage" },
-  { key: "year_desc", label: "Newest Model" },
+const SORT_KEYS = [
+  { key: "newest" as const, labelKey: "browse_sort_newest" as const },
+  { key: "price_asc" as const, labelKey: "browse_sort_price_asc" as const },
+  { key: "price_desc" as const, labelKey: "browse_sort_price_desc" as const },
+  { key: "mileage_asc" as const, labelKey: "browse_sort_mileage_asc" as const },
+  { key: "year_desc" as const, labelKey: "browse_sort_year_desc" as const },
 ];
 
 export const Route = createFileRoute("/browse")({
-  head: () => ({
-    meta: [
-      { title: "Browse Cars — APEXAuto" },
-      { name: "description", content: "Browse all verified used cars and live auctions." },
-    ],
-  }),
   validateSearch: (search: Record<string, unknown>) => ({
     q: (search.q as string) ?? "",
   }),
@@ -50,8 +44,10 @@ function BrowsePage() {
   const [brand, setBrand] = useState("");
   const [city, setCity] = useState("");
   const [fuel, setFuel] = useState("");
+  const [transmission, setTransmission] = useState("");
+  const [accidentFilter, setAccidentFilter] = useState<"all" | "none" | "yes">("all");
   const [minPrice, setMinPrice] = useState(0);
-  const [maxPrice, setMaxPrice] = useState(100_000_000);
+  const [maxPrice, setMaxPrice] = useState(PRICE_CEILING);
   const [minYear, setMinYear] = useState(2000);
   // SSR-safe: initialise above the highest inventory year so no cars are excluded
   // before the useEffect below snaps these to the real current year on the client.
@@ -65,10 +61,12 @@ function BrowsePage() {
   const [page, setPage] = useState(1);
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const { t } = useLanguage();
+  const { isLight } = useThemeMode();
 
   const brands = Array.from(new Set(cars.map((c) => c.brand))).sort();
   const cities = Array.from(new Set(cars.map((c) => c.city))).sort();
   const fuels = Array.from(new Set(cars.map((c) => c.fuel))).sort();
+  const transmissions = Array.from(new Set(cars.map((c) => c.transmission))).sort();
 
   // Defer Date to client-side only — avoids SSR/hydration mismatch
   useEffect(() => {
@@ -78,21 +76,17 @@ function BrowsePage() {
   }, []);
 
   useEffect(() => { if (initialQ) setQ(initialQ); }, [initialQ]);
-  useEffect(() => { setPage(1); }, [q, brand, city, fuel, minPrice, maxPrice, minYear, maxYear, onlyLive, carType, sort]);
-
-  useEffect(() => {
-    setCompareIds(getCompareIds());
-    const handler = () => setCompareIds(getCompareIds());
-    window.addEventListener("apex_compare_changed", handler);
-    return () => window.removeEventListener("apex_compare_changed", handler);
-  }, []);
+  useEffect(() => { setPage(1); }, [q, brand, city, fuel, transmission, accidentFilter, minPrice, maxPrice, minYear, maxYear, onlyLive, carType, sort]);
 
   const filtered = useMemo(() => {
     let result = cars.filter((c) => {
-      if (q && !`${c.title} ${c.brand} ${c.model} ${c.city} ${c.dealership}`.toLowerCase().includes(q.toLowerCase())) return false;
+      if (q && !`${c.title} ${c.brand} ${c.model} ${c.city}`.toLowerCase().includes(q.toLowerCase())) return false;
       if (brand && c.brand !== brand) return false;
       if (city && c.city !== city) return false;
       if (fuel && c.fuel !== fuel) return false;
+      if (transmission && c.transmission !== transmission) return false;
+      if (accidentFilter === "none" && c.accidentHistory) return false;
+      if (accidentFilter === "yes" && !c.accidentHistory) return false;
       const price = c.isLive ? c.currentBid ?? c.price : c.price;
       if (price < minPrice || price > maxPrice) return false;
       if (c.year < minYear || c.year > maxYear) return false;
@@ -113,19 +107,20 @@ function BrowsePage() {
     });
 
     return result;
-  }, [q, brand, city, fuel, minPrice, maxPrice, minYear, maxYear, onlyLive, carType, sort, cars]);
+  }, [q, brand, city, fuel, transmission, accidentFilter, minPrice, maxPrice, minYear, maxYear, onlyLive, carType, sort, cars]);
 
   const displayed = filtered.slice(0, page * PAGE_SIZE);
   const hasMore = displayed.length < filtered.length;
 
-  const isPriceFiltered = minPrice > 0 || maxPrice < 100_000_000;
+  const isPriceFiltered = minPrice > 0 || maxPrice < PRICE_CEILING;
   const isYearFiltered = minYear > 2000 || maxYear < currentYear;
 
-  const activeFiltersCount = [brand, city, fuel, isPriceFiltered, isYearFiltered, onlyLive, q.length > 0, carType !== "all"]
+  const activeFiltersCount = [brand, city, fuel, transmission, accidentFilter !== "all", isPriceFiltered, isYearFiltered, onlyLive, q.length > 0, carType !== "all"]
     .filter(Boolean).length;
 
   const resetAll = () => {
-    setBrand(""); setCity(""); setFuel(""); setMinPrice(0); setMaxPrice(100_000_000);
+    setBrand(""); setCity(""); setFuel(""); setTransmission(""); setAccidentFilter("all");
+    setMinPrice(0); setMaxPrice(PRICE_CEILING);
     setMinYear(2000); setMaxYear(currentYear);
     setOnlyLive(false); setCarType("all"); setQ(""); setSort("newest");
   };
@@ -169,45 +164,105 @@ function BrowsePage() {
       </div>
 
       <div className="space-y-2">
-        <label className="text-xs uppercase tracking-wider text-muted-foreground">Fuel Type</label>
+        <label className="text-xs uppercase tracking-wider text-muted-foreground">{t("browse_fuel")}</label>
         <div className="flex flex-wrap gap-1.5">
-          <button onClick={() => setFuel("")} className={`px-2.5 py-1 rounded-lg text-xs transition-smooth ${fuel === "" ? "bg-gradient-primary text-primary-foreground" : "glass hover:bg-secondary/50"}`}>All</button>
+          <button onClick={() => setFuel("")} className={`px-2.5 py-1 rounded-lg text-xs transition-smooth ${fuel === "" ? "bg-gradient-primary text-primary-foreground" : "glass hover:bg-secondary/50"}`}>{t("browse_all")}</button>
           {fuels.map((f) => <button key={f} onClick={() => setFuel(f)} className={`px-2.5 py-1 rounded-lg text-xs transition-smooth ${fuel === f ? "bg-gradient-primary text-primary-foreground" : "glass hover:bg-secondary/50"}`}>{f}</button>)}
         </div>
       </div>
 
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <label className="text-xs uppercase tracking-wider text-muted-foreground">Price Range</label>
-          <span className="text-xs font-display font-semibold text-primary-glow">
-            {formatPrice(minPrice)} – {maxPrice >= 100_000_000 ? "Any" : formatPrice(maxPrice)}
-          </span>
+      <div className="space-y-2">
+        <label className="text-xs uppercase tracking-wider text-muted-foreground">{t("browse_transmission")}</label>
+        <div className="flex flex-wrap gap-1.5">
+          <button onClick={() => setTransmission("")} className={`px-2.5 py-1 rounded-lg text-xs transition-smooth ${transmission === "" ? "bg-gradient-primary text-primary-foreground" : "glass hover:bg-secondary/50"}`}>{t("browse_all")}</button>
+          {transmissions.map((tr) => <button key={tr} onClick={() => setTransmission(tr)} className={`px-2.5 py-1 rounded-lg text-xs transition-smooth ${transmission === tr ? "bg-gradient-primary text-primary-foreground" : "glass hover:bg-secondary/50"}`}>{tr}</button>)}
         </div>
-        <div className="space-y-2">
-          <div className="flex gap-2 items-center">
-            <span className="text-[10px] text-muted-foreground w-6">Min</span>
-            <Slider value={[minPrice]} onValueChange={([v]) => { if (v < maxPrice) setMinPrice(v); }} min={0} max={100_000_000} step={100_000} className="py-1 flex-1" />
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-xs uppercase tracking-wider text-muted-foreground">{t("browse_accidents")}</label>
+        <div className="flex flex-wrap gap-1.5">
+          {(["all", "none", "yes"] as const).map((opt) => (
+            <button key={opt} onClick={() => setAccidentFilter(opt)}
+              className={`px-2.5 py-1 rounded-lg text-xs transition-smooth ${accidentFilter === opt ? "bg-gradient-primary text-primary-foreground" : "glass hover:bg-secondary/50"}`}>
+              {opt === "all" ? t("browse_accidents_all") : opt === "none" ? t("browse_accidents_none") : t("browse_accidents_yes")}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-xs uppercase tracking-wider text-muted-foreground">{t("browse_price_range")}</label>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <span className="text-[10px] text-muted-foreground mb-1 block">{t("browse_min")}</span>
+            <Input
+              type="number"
+              min={0}
+              inputMode="numeric"
+              value={minPrice === 0 ? "" : minPrice}
+              onChange={(e) => {
+                const raw = e.target.value;
+                if (raw === "") { setMinPrice(0); return; }
+                const v = Number(raw);
+                if (!Number.isNaN(v) && v >= 0) setMinPrice(Math.min(v, maxPrice - 1));
+              }}
+              placeholder="0"
+              className="h-9 text-sm bg-background/50"
+            />
           </div>
-          <div className="flex gap-2 items-center">
-            <span className="text-[10px] text-muted-foreground w-6">Max</span>
-            <Slider value={[maxPrice]} onValueChange={([v]) => { if (v > minPrice) setMaxPrice(v); }} min={0} max={100_000_000} step={100_000} className="py-1 flex-1" />
+          <div>
+            <span className="text-[10px] text-muted-foreground mb-1 block">{t("browse_max")}</span>
+            <Input
+              type="number"
+              min={0}
+              inputMode="numeric"
+              value={maxPrice >= PRICE_CEILING ? "" : maxPrice}
+              onChange={(e) => {
+                const raw = e.target.value;
+                if (raw === "") { setMaxPrice(PRICE_CEILING); return; }
+                const v = Number(raw);
+                if (!Number.isNaN(v) && v > minPrice) setMaxPrice(v);
+              }}
+              placeholder={t("browse_any")}
+              className="h-9 text-sm bg-background/50"
+            />
           </div>
         </div>
       </div>
 
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <label className="text-xs uppercase tracking-wider text-muted-foreground">Year Range</label>
-          <span className="text-xs font-display font-semibold text-primary-glow">{minYear} – {maxYear}</span>
-        </div>
-        <div className="space-y-2">
-          <div className="flex gap-2 items-center">
-            <span className="text-[10px] text-muted-foreground w-6">From</span>
-            <Slider value={[minYear]} onValueChange={([v]) => { if (v <= maxYear) setMinYear(v); }} min={1990} max={currentYear} step={1} className="py-1 flex-1" />
+      <div className="space-y-2">
+        <label className="text-xs uppercase tracking-wider text-muted-foreground">{t("browse_year_range")}</label>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <span className="text-[10px] text-muted-foreground mb-1 block">{t("browse_from")}</span>
+            <Input
+              type="number"
+              min={1990}
+              max={currentYear}
+              inputMode="numeric"
+              value={minYear}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (!Number.isNaN(v) && v >= 1990 && v <= maxYear) setMinYear(v);
+              }}
+              className="h-9 text-sm bg-background/50"
+            />
           </div>
-          <div className="flex gap-2 items-center">
-            <span className="text-[10px] text-muted-foreground w-6">To</span>
-            <Slider value={[maxYear]} onValueChange={([v]) => { if (v >= minYear) setMaxYear(v); }} min={1990} max={currentYear} step={1} className="py-1 flex-1" />
+          <div>
+            <span className="text-[10px] text-muted-foreground mb-1 block">{t("browse_to")}</span>
+            <Input
+              type="number"
+              min={1990}
+              max={currentYear}
+              inputMode="numeric"
+              value={maxYear}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (!Number.isNaN(v) && v >= minYear && v <= currentYear) setMaxYear(v);
+              }}
+              className="h-9 text-sm bg-background/50"
+            />
           </div>
         </div>
       </div>
@@ -227,10 +282,11 @@ function BrowsePage() {
   );
 
   return (
-    <div className="min-h-screen pb-nav md:pb-0">
+    <div className="min-h-screen pb-nav">
+      <PageMeta titleKey="browse_title" descriptionKey="seo_browse_desc" />
       <Header />
 
-      <div className="sticky top-14 z-40 md:hidden glass-strong border-b border-border/40 px-4 py-2.5">
+      <div className="sticky-below-header md:hidden glass-strong border-b border-border/40 px-4 py-2.5">
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -246,21 +302,13 @@ function BrowsePage() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 md:py-10">
+      <div className="page-content max-w-7xl py-6 md:py-10">
         <div className="hidden md:flex items-center justify-between mb-8">
           <div>
-            <h1 className="font-display text-4xl font-bold">{t("browse_title")}</h1>
-            <p className="text-muted-foreground mt-2">{t("browse_results", { n: filtered.length })} of {cars.length}</p>
+            <h1 className="text-headline-lg font-display font-bold">{t("browse_title")}</h1>
+            <p className="text-muted-foreground mt-2">{t("browse_results", { n: filtered.length })} {t("browse_of_total", { n: cars.length })}</p>
           </div>
           <div className="flex items-center gap-3">
-            {compareIds.length > 0 && (
-              <Button asChild variant="outline" className="glass gap-2 border-primary/40 text-primary-glow">
-                <Link to="/compare">
-                  <GitCompare className="h-4 w-4" />
-                  Compare ({compareIds.length})
-                </Link>
-              </Button>
-            )}
             <div className="flex items-center gap-2">
               <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
               <select
@@ -268,7 +316,7 @@ function BrowsePage() {
                 onChange={(e) => setSort(e.target.value as SortKey)}
                 className="bg-background/50 border border-border rounded-lg px-3 py-2 text-sm outline-none focus:border-primary"
               >
-                {SORT_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+                {SORT_KEYS.map((o) => <option key={o.key} value={o.key}>{t(o.labelKey)}</option>)}
               </select>
             </div>
           </div>
@@ -276,23 +324,18 @@ function BrowsePage() {
         <div className="md:hidden mb-4 flex items-center justify-between">
           <p className="text-sm text-muted-foreground">{t("browse_results", { n: filtered.length })}</p>
           <div className="flex items-center gap-2">
-            {compareIds.length > 0 && (
-              <Link to="/compare" className="flex items-center gap-1 text-xs text-primary-glow border border-primary/30 px-2 py-1 rounded-lg glass">
-                <GitCompare className="h-3 w-3" /> Compare ({compareIds.length})
-              </Link>
-            )}
             {activeFiltersCount > 0 && <button className="text-xs text-primary-glow underline" onClick={resetAll}>{t("browse_reset")}</button>}
             <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className="bg-background/50 border border-border rounded-lg px-2 py-1 text-xs outline-none">
-              {SORT_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+              {SORT_KEYS.map((o) => <option key={o.key} value={o.key}>{t(o.labelKey)}</option>)}
             </select>
           </div>
         </div>
 
-        <div className="grid lg:grid-cols-[280px_1fr] gap-6">
-          <aside className="hidden lg:block space-y-5 glass-strong rounded-2xl p-5 h-fit lg:sticky lg:top-20">
+        <div className={isLight ? "grid lg:grid-cols-[280px_1fr] gap-8" : "grid lg:grid-cols-[280px_1fr] gap-6"}>
+          <aside className={`hidden lg:block space-y-5 h-fit lg:sticky-below-header ${isLight ? "aether-glass-panel rounded-[2rem] p-6" : "glass-strong rounded-2xl p-5"}`}>
             <div className="flex items-center gap-2 pb-3 border-b border-border/40">
               <SlidersHorizontal className="h-4 w-4 text-primary-glow" />
-              <span className="font-display font-semibold text-sm">{t("browse_filters")}</span>
+              <span className="text-label-caps text-muted-foreground">{t("browse_filters")}</span>
               {activeFiltersCount > 0 && <Badge className="ms-auto bg-primary/20 text-primary-glow border-0 text-[10px]">{t("browse_active", { n: activeFiltersCount })}</Badge>}
             </div>
             <SidebarFilters />
@@ -307,13 +350,13 @@ function BrowsePage() {
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-5">
-                  {displayed.map((c) => <CarCard key={c.id} car={c} showCompare />)}
+                <div className={isLight ? "grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8" : "grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-5"}>
+                  {displayed.map((c) => <CarCard key={c.id} car={c} />)}
                 </div>
                 {hasMore && (
                   <div className="mt-8 text-center">
                     <Button variant="outline" className="glass gap-2 px-8" onClick={() => setPage((p) => p + 1)}>
-                      Load More ({filtered.length - displayed.length} remaining)
+                      {t("browse_load_more")} ({t("browse_remaining", { n: filtered.length - displayed.length })})
                     </Button>
                   </div>
                 )}
@@ -322,21 +365,6 @@ function BrowsePage() {
           </div>
         </div>
       </div>
-
-      {compareIds.length > 0 && (
-        <div className="fixed bottom-20 md:bottom-6 start-1/2 -translate-x-1/2 z-50 animate-fade-up">
-          <div className="glass-strong border border-primary/40 rounded-2xl px-4 py-3 flex items-center gap-4 shadow-elegant">
-            <GitCompare className="h-4 w-4 text-primary-glow shrink-0" />
-            <span className="text-sm font-medium">{compareIds.length} car{compareIds.length > 1 ? "s" : ""} selected</span>
-            <Button asChild size="sm" className="bg-gradient-primary border-0 text-primary-foreground h-8 text-xs">
-              <Link to="/compare">Compare Now</Link>
-            </Button>
-            <button onClick={() => { clearCompare(); setCompareIds([]); }} className="text-muted-foreground hover:text-foreground transition-smooth">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      )}
 
       {showMobileFilters && (
         <div className="fixed inset-0 z-50 flex items-end md:hidden" onClick={() => setShowMobileFilters(false)}>

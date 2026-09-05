@@ -1,7 +1,7 @@
 import { createStart, createMiddleware } from "@tanstack/react-start";
 import { clerkMiddleware } from "@clerk/tanstack-react-start/server";
 import { renderErrorPage } from "./lib/error-page";
-import { CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY } from "./lib/clerk-config";
+import { CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY } from "./lib/clerk-config.server";
 
 const CLERK_COOKIE_PREFIXES = ["__session", "__client", "__clerk", "clerk_"];
 
@@ -65,7 +65,7 @@ const errorMiddleware = createMiddleware().server(async ({ next, request }) => {
       throw error;
     }
     console.error(error);
-    return new Response(renderErrorPage(), {
+    return new Response(renderErrorPage(error), {
       status: 500,
       headers: { "content-type": "text/html; charset=utf-8" },
     });
