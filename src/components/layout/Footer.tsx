@@ -2,7 +2,6 @@ import { Link } from "@tanstack/react-router";
 import { BrandLogo } from "@/components/BrandLogo";
 import { toast } from "sonner";
 import { useLanguage, type TranslationKey } from "@/lib/language";
-import { useThemeMode } from "@/lib/theme-mode";
 
 type FooterLink =
   | { labelKey: TranslationKey; to: "/browse" | "/auctions" }
@@ -63,7 +62,6 @@ function FooterColumns({ columns, compact }: { columns: FooterColumn[]; compact?
 
 export function Footer() {
   const { t } = useLanguage();
-  const { isLight } = useThemeMode();
 
   const FOOTER_LINKS: FooterColumn[] = [
     {
@@ -94,49 +92,10 @@ export function Footer() {
     },
   ];
 
-  if (isLight) {
-    return (
-      <footer className="aether-footer border-t border-[#bac9cc]/30 mt-8 sm:mt-16 py-5 sm:py-12 md:py-16">
-        <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8">
-          {/* Mobile: logo + 3 link cols in one row */}
-          <div className="md:hidden space-y-3">
-            <BrandLogo size="sm" linkToHome compact />
-            <div className="grid grid-cols-3 gap-2">
-              <FooterColumns columns={FOOTER_LINKS} compact />
-            </div>
-            <p className="text-[10px] text-muted-foreground leading-snug pt-1 border-t border-[#bac9cc]/30">
-              {t("footer_copy")}
-            </p>
-          </div>
-
-          {/* Desktop */}
-          <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-4 gap-8">
-            <div className="flex flex-col gap-4">
-              <BrandLogo size="sm" linkToHome />
-              <p className="text-sm text-muted-foreground mt-auto">{t("footer_copy")}</p>
-            </div>
-            {FOOTER_LINKS.map((col) => (
-              <div key={col.titleKey} className="flex flex-col gap-3">
-                {col.links.map((l) => (
-                  <FooterLinkItem
-                    key={l.labelKey}
-                    link={l}
-                    className="text-sm text-muted-foreground hover:text-primary underline decoration-primary underline-offset-4 transition-colors"
-                  />
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
-      </footer>
-    );
-  }
-
   return (
-    <footer className="border-t border-border mt-8 sm:mt-16 relative">
+    <footer className="aether-footer border-t border-border mt-8 sm:mt-16 relative">
       <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent footer-neon-line" />
       <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 py-5 sm:py-8">
-        {/* Mobile: compact — logo row + 3 cols in one row + copyright */}
         <div className="md:hidden space-y-3">
           <BrandLogo size="sm" linkToHome compact />
           <div className="grid grid-cols-3 gap-2">
@@ -148,7 +107,6 @@ export function Footer() {
           </div>
         </div>
 
-        {/* Desktop */}
         <div className="hidden md:block">
           <div className="grid gap-8 md:grid-cols-4">
             <div>

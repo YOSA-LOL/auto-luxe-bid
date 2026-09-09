@@ -29,8 +29,6 @@ import { addNotification } from "@/lib/notifications";
 import { addRecentlyViewed } from "@/lib/recently-viewed";
 import { setPriceAlert, removePriceAlert, hasPriceAlert, getPriceAlertTarget } from "@/lib/price-alerts";
 import { PageMeta } from "@/components/PageMeta";
-import { SpecHotspots } from "@/components/SpecHotspots";
-import { useThemeMode } from "@/lib/theme-mode";
 import { BRAND_NAME, INFO_EMAIL } from "@/lib/brand";
 
 function AuctionEntryModal({
@@ -280,7 +278,6 @@ function CarPage() {
   const { isFavorited, toggle } = useFavorites();
   const liked = isFavorited(car.id);
   const { t } = useLanguage();
-  const { isLight } = useThemeMode();
 
   const [currentBid, setCurrentBid] = useState(car.currentBid ?? car.price);
   const [bidInput, setBidInput] = useState(
@@ -623,18 +620,6 @@ function CarPage() {
         <div className="flex flex-col lg:flex-row lg:items-stretch gap-6 md:gap-8">
           {/* MAIN — images, specs (right in RTL) */}
           <div className="flex-1 min-w-0 space-y-6">
-            {isLight ? (
-              <SpecHotspots
-                imageSrc={galleryImages[selectedImg]}
-                alt={car.title}
-                title={car.title}
-                items={[
-                  ...(car.hp ? [{ id: "hp", label: "Horsepower", value: `${car.hp} hp`, top: "30%", left: "28%" }] : []),
-                  ...(car.engine ? [{ id: "engine", label: "Engine", value: car.engine, top: "52%", left: "62%" }] : []),
-                  ...(car.transmission ? [{ id: "trans", label: "Transmission", value: car.transmission, top: "68%", left: "40%" }] : []),
-                ]}
-              />
-            ) : (
             <div className="relative rounded-3xl overflow-hidden border border-border/60 shadow-elegant">
               <img src={galleryImages[selectedImg]} alt={car.title} width={1280} height={896} className="w-full h-auto" />
               <div className="absolute top-4 start-4 flex gap-2">
@@ -659,7 +644,6 @@ function CarPage() {
                 </button>
               </div>
             </div>
-            )}
 
             {galleryImages.length > 1 && (
               <div className="grid grid-cols-4 gap-1.5 sm:gap-3">
@@ -684,15 +668,8 @@ function CarPage() {
             )}
 
             <div>
-              {!isLight && (
-                <>
               <div className="text-xs text-muted-foreground uppercase tracking-wider">{car.brand} · {car.year} · {car.color}</div>
               <h1 className="font-display text-2xl md:text-4xl font-bold mt-1 leading-tight">{car.title}</h1>
-                </>
-              )}
-              {isLight && (
-                <p className="text-sm text-muted-foreground">{car.brand} · {car.model} · {car.year}</p>
-              )}
               <div className="flex flex-wrap gap-4 mt-3 text-sm text-muted-foreground">
                 <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {car.city}</span>
                 {car.isLive && (
@@ -858,9 +835,9 @@ function CarPage() {
 
           {/* SIDEBAR — price/bid panel (left in RTL), sticks while scrolling main content */}
           <aside className="w-full lg:w-80 xl:w-96 shrink-0 lg:self-stretch">
-            <div className={`space-y-5 lg:sticky-below-header${isLight ? " aether-glass-panel rounded-2xl p-4" : ""}`}>
+            <div className="space-y-5 lg:sticky-below-header">
             {car.isLive ? (
-              <div className={isLight ? "aether-glass-panel rounded-[2rem] p-6" : "rounded-2xl glass-strong border border-primary/30 p-6 shadow-elegant"}>
+              <div className="rounded-2xl glass-strong border border-primary/30 p-6 shadow-elegant">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs uppercase tracking-wider text-muted-foreground">{t("car_current_bid")}</span>
                   <Badge className="bg-[var(--live)] text-white border-0 animate-pulse-live gap-1">
@@ -988,7 +965,7 @@ function CarPage() {
                 )}
               </div>
             ) : car.auctionStatus === "ended_with_winner" ? (
-              <div className={isLight ? "aether-glass-panel rounded-[2rem] p-6 space-y-3" : "rounded-2xl glass-strong p-6 shadow-elegant space-y-3"}>
+              <div className="rounded-2xl glass-strong p-6 shadow-elegant space-y-3">
                 <Badge variant="outline">{t("car_auction_ended")}</Badge>
                 <div className="font-display text-3xl font-bold text-gradient-primary">{formatPrice(currentBid || car.price)}</div>
                 {user?.email && car.winnerEmail === user.email ? (
@@ -1004,13 +981,13 @@ function CarPage() {
                 )}
               </div>
             ) : car.auctionStatus === "no_sale" ? (
-              <div className={isLight ? "aether-glass-panel rounded-[2rem] p-6 space-y-3" : "rounded-2xl glass-strong p-6 shadow-elegant space-y-3"}>
+              <div className="rounded-2xl glass-strong p-6 shadow-elegant space-y-3">
                 <Badge variant="outline">{t("car_auction_ended")}</Badge>
                 <p className="text-sm text-muted-foreground">{t("car_reserve_not_met")}</p>
                 <div className="font-display text-2xl font-bold">{formatPrice(car.price)}</div>
               </div>
             ) : (
-              <div className={isLight ? "aether-glass-panel rounded-[2rem] p-6 space-y-3" : "rounded-2xl glass-strong p-6 shadow-elegant space-y-3"}>
+              <div className="rounded-2xl glass-strong p-6 shadow-elegant space-y-3">
                 <div className="text-xs uppercase tracking-wider text-muted-foreground">{t("car_buy_now_price")}</div>
                 <div className="font-display text-3xl md:text-4xl font-bold text-gradient-primary">{formatPrice(car.price)}</div>
 

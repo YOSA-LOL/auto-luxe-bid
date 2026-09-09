@@ -6,7 +6,6 @@ import { Heart, MapPin, Gauge, Fuel, CircleCheck, Radio, Car } from "lucide-reac
 import { toast } from "sonner";
 import { useFavorites } from "@/lib/favorites";
 import { useLanguage } from "@/lib/language";
-import { useThemeMode } from "@/lib/theme-mode";
 import { useState } from "react";
 
 export function CarCard({ car }: { car: AppCar }) {
@@ -14,7 +13,6 @@ export function CarCard({ car }: { car: AppCar }) {
   const { isFavorited, toggle } = useFavorites();
   const liked = isFavorited(car.id);
   const { t } = useLanguage();
-  const { isLight } = useThemeMode();
   const [imgError, setImgError] = useState(false);
 
   const handleHeart = (e: React.MouseEvent) => {
@@ -26,91 +24,6 @@ export function CarCard({ car }: { car: AppCar }) {
 
   const noImage = !car.image || imgError;
   const displayPrice = formatPrice(live ? (car.currentBid ?? car.price) : car.price, car.currency);
-  const subtitle = [car.brand, car.model, car.year].filter(Boolean).join(" · ");
-
-  if (isLight) {
-    const specs = [
-      { value: `${formatNumber(car.mileage)}`, label: "km" },
-      { value: car.hp ? `${car.hp}` : car.fuel, label: car.hp ? "HP" : car.fuel },
-      { value: car.transmission, label: car.city },
-    ];
-
-    return (
-      <Link
-        to="/cars/$carId"
-        params={{ carId: car.id }}
-        className="aether-showroom-card group flex flex-col overflow-hidden rounded-[32px] transition-transform duration-300 hover:-translate-y-1"
-      >
-        <div className="relative h-48 sm:h-64 bg-[var(--surface-container)] overflow-hidden">
-          {noImage ? (
-            <div className="h-full w-full flex flex-col items-center justify-center gap-2">
-              <Car className="h-10 w-10 text-primary/30" />
-              <span className="text-label-caps text-muted-foreground">No photo</span>
-            </div>
-          ) : (
-            <img
-              src={car.image}
-              alt={car.title}
-              loading="lazy"
-              width={1280}
-              height={896}
-              onError={() => setImgError(true)}
-              className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
-            />
-          )}
-          {(live || car.verified) && (
-            <div className="absolute top-3 start-3 flex gap-1.5">
-              {live && (
-                <Badge className="bg-[var(--live)] text-white border-0 gap-1 text-[10px]">
-                  <Radio className="h-2.5 w-2.5" /> LIVE
-                </Badge>
-              )}
-              {car.verified && (
-                <Badge variant="outline" className="bg-white/90 border-[#bac9cc]/50 text-foreground gap-1 text-[10px]">
-                  <CircleCheck className="h-2.5 w-2.5 text-primary" />
-                  {t("card_verified")}
-                </Badge>
-              )}
-            </div>
-          )}
-          <div className="absolute top-3 end-3">
-            <button
-              onClick={handleHeart}
-              className={`h-8 w-8 rounded-full bg-white/90 border border-[#bac9cc]/40 flex items-center justify-center transition-smooth shadow-sm ${liked ? "text-red-500" : "text-foreground"}`}
-              aria-label={liked ? t("card_fav_remove") : t("card_fav_add")}
-            >
-              <Heart className={`h-3.5 w-3.5 ${liked ? "fill-current" : ""}`} />
-            </button>
-          </div>
-        </div>
-
-        <div className="p-5 sm:p-6 flex flex-col flex-grow">
-          <div className="mb-5">
-            <h3 className="aether-card-title font-display font-bold text-foreground line-clamp-2 leading-snug">
-              {car.title}
-            </h3>
-            <p className="aether-card-subtitle text-muted-foreground mt-1 line-clamp-1">{subtitle}</p>
-            <p className="aether-card-price text-primary font-semibold mt-2">
-              {live ? displayPrice : `${t("card_from")} ${displayPrice}`}
-            </p>
-          </div>
-
-          <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-5 sm:mb-6 mt-auto">
-            {specs.map((s, i) => (
-              <div key={i} className={`flex flex-col min-w-0 ${i > 0 ? "aether-spec-col" : ""}`}>
-                <span className="aether-card-spec-value font-display font-semibold text-foreground truncate">{s.value}</span>
-                <span className="aether-card-spec-label text-label-caps text-muted-foreground mt-0.5 truncate">{s.label}</span>
-              </div>
-            ))}
-          </div>
-
-          <span className="aether-view-details w-full py-3 rounded-full border text-sm text-center block transition-all duration-300">
-            {t("card_view_details")}
-          </span>
-        </div>
-      </Link>
-    );
-  }
 
   return (
     <Link

@@ -157,8 +157,8 @@ html[data-theme="dark"] {
   }
 
   .bg-gradient-primary {
-    background: var(--gradient-primary);
-    background-color: transparent;
+    background-color: var(--gradient-primary);
+    background-image: none;
   }
 
   /* CTA buttons — calm solid purple in both perf modes */

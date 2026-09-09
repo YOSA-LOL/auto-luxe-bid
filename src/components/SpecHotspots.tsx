@@ -22,7 +22,7 @@ export function SpecHotspots({
   const [active, setActive] = useState<string | null>(null);
 
   return (
-    <div className="relative rounded-[2rem] overflow-hidden border border-[#bac9cc]/30 shadow-elegant">
+    <div className="relative rounded-2xl overflow-hidden border border-border shadow-elegant">
       <img src={imageSrc} alt={alt} className="w-full h-auto object-cover min-h-[280px] sm:min-h-[400px]" />
       {title && (
         <div className="absolute bottom-6 start-6 end-6 pointer-events-none">
@@ -40,8 +40,8 @@ export function SpecHotspots({
             onClick={() => setActive(active === item.id ? null : item.id)}
             className={`h-8 w-8 rounded-full border-2 flex items-center justify-center transition-smooth ${
               active === item.id
-                ? "bg-primary-container border-primary text-on-primary-container scale-110"
-                : "bg-white/90 border-primary/60 text-primary hover:scale-105"
+                ? "bg-[var(--primary-container)] border-[var(--neon)] text-[var(--on-primary-container)] scale-110"
+                : "bg-[var(--surface-elevated)]/95 border-border text-foreground hover:scale-105"
             }`}
             aria-label={item.label}
           >

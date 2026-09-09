@@ -10,7 +10,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Search, SlidersHorizontal, X, ArrowUpDown } from "lucide-react";
 import { useLanguage } from "@/lib/language";
-import { useThemeMode } from "@/lib/theme-mode";
 import { PageMeta } from "@/components/PageMeta";
 
 const PAGE_SIZE = 12;
@@ -61,7 +60,6 @@ function BrowsePage() {
   const [page, setPage] = useState(1);
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const { t } = useLanguage();
-  const { isLight } = useThemeMode();
 
   const brands = Array.from(new Set(cars.map((c) => c.brand))).sort();
   const cities = Array.from(new Set(cars.map((c) => c.city))).sort();
@@ -331,8 +329,8 @@ function BrowsePage() {
           </div>
         </div>
 
-        <div className={isLight ? "grid lg:grid-cols-[280px_1fr] gap-8" : "grid lg:grid-cols-[280px_1fr] gap-6"}>
-          <aside className={`hidden lg:block space-y-5 h-fit lg:sticky-below-header ${isLight ? "aether-glass-panel rounded-[2rem] p-6" : "glass-strong rounded-2xl p-5"}`}>
+        <div className="grid lg:grid-cols-[280px_1fr] gap-6">
+          <aside className="hidden lg:block space-y-5 h-fit lg:sticky-below-header glass-strong rounded-2xl p-5">
             <div className="flex items-center gap-2 pb-3 border-b border-border/40">
               <SlidersHorizontal className="h-4 w-4 text-primary-glow" />
               <span className="text-label-caps text-muted-foreground">{t("browse_filters")}</span>
@@ -350,7 +348,7 @@ function BrowsePage() {
               </div>
             ) : (
               <>
-                <div className={isLight ? "grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8" : "grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-5"}>
+                <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-5">
                   {displayed.map((c) => <CarCard key={c.id} car={c} />)}
                 </div>
                 {hasMore && (

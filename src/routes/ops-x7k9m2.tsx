@@ -27,7 +27,7 @@ import {
   ShieldCheck, Activity, Download, Plus, X, Edit2, Trash2,
   Radio, ChevronDown, ChevronUp, Star, Clock, ImagePlus,
   FileText, Video, AlertTriangle, Wrench, Zap, Shield,
-  Timer, RotateCcw, Upload, MessageCircle,
+  Timer, RotateCcw, Upload, MessageCircle, Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLanguage, type TranslationKey } from "@/lib/language";

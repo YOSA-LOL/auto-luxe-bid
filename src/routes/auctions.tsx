@@ -24,7 +24,8 @@ export const Route = createFileRoute("/auctions")({
   component: AuctionsPage,
 });
 
-function AuctionRow({ c, now, t }: { c: AppCar; now: number; t: (k: string) => string }) {
+function AuctionRow({ c, now }: { c: AppCar; now: number }) {
+  const { t } = useLanguage();
   const isExpired = c.endsAt != null && now > 0 && c.endsAt < now;
   return (
     <Link
@@ -33,7 +34,7 @@ function AuctionRow({ c, now, t }: { c: AppCar; now: number; t: (k: string) => s
       className="group relative grid md:grid-cols-[260px_1fr_auto] gap-5 items-center glass-strong rounded-2xl p-4 hover-lift"
     >
       <div className="relative aspect-[16/11] rounded-xl overflow-hidden">
-        <img src={c.image} alt={c.title} loading="lazy" width={1280} height={896} className="h-full w-full object-cover" />
+        <img src={c.image} alt={c.title} loading="lazy" width={1280} height={896} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
         {isExpired ? (
           <Badge className="absolute top-2 start-2 bg-[var(--success)] text-white border-0 gap-1">
             <CheckCircle2 className="h-3 w-3" /> SOLD
@@ -112,7 +113,7 @@ function AuctionsPage() {
         </div>
 
         {live.length === 0 ? (
-          <div className="mt-16 text-center py-20 glass-strong rounded-3xl border border-border/40">
+          <div className="mt-16 text-center py-20 rounded-3xl border border-border/40 glass-strong">
             <Gavel className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <h3 className="font-display text-xl font-semibold mb-2">{t("auctions_none_title")}</h3>
             <p className="text-muted-foreground">{t("auctions_none_p")}</p>
@@ -129,7 +130,7 @@ function AuctionsPage() {
                 </h2>
                 <div className="space-y-4">
                   {endingSoon.map((c) => (
-                    <AuctionRow key={c.id} c={c} now={now} t={t} />
+                    <AuctionRow key={c.id} c={c} now={now} />
                   ))}
                 </div>
               </div>
@@ -138,7 +139,7 @@ function AuctionsPage() {
               <h2 className="font-display text-xl font-bold mb-4">{t("live_now")}</h2>
               <div className="space-y-4">
                 {(endingSoon.length ? liveRest : live).map((c) => (
-                  <AuctionRow key={c.id} c={c} now={now} t={t} />
+                  <AuctionRow key={c.id} c={c} now={now} />
                 ))}
               </div>
             </div>

@@ -2,7 +2,6 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { Home, Search, Gavel, Heart } from "lucide-react";
 import { useFavorites } from "@/lib/favorites";
 import { useLanguage } from "@/lib/language";
-import { useThemeMode } from "@/lib/theme-mode";
 
 const TABS = [
   { to: "/", icon: Home, labelKey: "nav_home" as const },
@@ -15,7 +14,6 @@ export function BottomNav() {
   const { count } = useFavorites();
   const { location } = useRouterState();
   const { t } = useLanguage();
-  const { isLight } = useThemeMode();
   const path = location.pathname;
 
   return (
@@ -32,12 +30,12 @@ export function BottomNav() {
                 {...(tab.to === "/browse" ? { search: { q: "" } } : {})}
                 className={`aether-bottom-tab relative flex flex-col items-center justify-center gap-0.5 px-3 py-2 rounded-xl transition-smooth min-w-[52px] ${
                   isActive
-                    ? isLight ? "text-primary" : "text-primary-glow"
+                    ? "text-primary-glow"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
                 data-active={isActive ? "true" : undefined}
               >
-                {isActive && !isLight && (
+                {isActive && (
                   <span className="aether-tab-glow absolute inset-0 bg-primary/10 rounded-xl" />
                 )}
                 <span className="relative">
@@ -50,7 +48,7 @@ export function BottomNav() {
                     </span>
                   )}
                 </span>
-                <span className={`text-[10px] font-medium leading-none ${isActive ? (isLight ? "text-primary" : "text-primary-glow") : ""}`}>
+                <span className={`text-[10px] font-medium leading-none ${isActive ? "text-primary-glow" : ""}`}>
                   {t(tab.labelKey)}
                 </span>
               </Link>

@@ -131,7 +131,6 @@ function SoldPage() {
                       </div>
                     )}
 
-                    {/* Dark gradient overlay */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
 
                     {/* SOLD badge */}

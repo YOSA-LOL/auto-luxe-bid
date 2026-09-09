@@ -7,7 +7,6 @@ import { Route as RootRoute } from "@/routes/__root";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useFavorites } from "@/lib/favorites";
 import { useLanguage } from "@/lib/language";
-import { useThemeMode } from "@/lib/theme-mode";
 import { getCarsFromDb } from "@/lib/cars.server";
 import { dbCarToApp } from "@/lib/types";
 import type { AppCar } from "@/lib/types";
@@ -59,7 +58,6 @@ export function Header() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const { count } = useFavorites();
   const { lang, setLang, t } = useLanguage();
-  const { isLight } = useThemeMode();
   const path = useRouterState({ select: (s) => s.location.pathname });
 
   const navActive = (to: string) => (to === "/" ? path === "/" : path.startsWith(to));
@@ -176,19 +174,13 @@ export function Header() {
             <BrandLogo size="sm" linkToHome compact />
           </div>
 
-          <nav className={`hidden md:flex items-center ${isLight ? "gap-8" : "gap-1"}`}>
+          <nav className="hidden md:flex items-center gap-1">
             {navLinks.map((l) => (
               <Link key={l.to} to={l.to} {...("search" in l ? { search: l.search } : {})}
-                className={`aether-nav-link px-4 py-2 text-sm font-medium transition-smooth ${
-                  isLight
-                    ? "text-muted-foreground hover:text-primary"
-                    : "text-muted-foreground hover:text-foreground rounded-md hover:bg-secondary/50"
-                }`}
+                className="aether-nav-link px-4 py-2 text-sm font-medium transition-smooth text-muted-foreground hover:text-foreground rounded-md hover:bg-secondary/50"
                 data-active={navActive(l.to) ? "true" : undefined}
                 activeProps={{
-                  className: `aether-nav-link px-4 py-2 text-sm font-medium transition-smooth ${
-                    isLight ? "text-primary" : "text-foreground rounded-md"
-                  }`,
+                  className: "aether-nav-link px-4 py-2 text-sm font-medium transition-smooth text-foreground rounded-md",
                   "data-active": "true",
                 }}>
                 {l.label}
