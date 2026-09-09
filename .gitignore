@@ -68,3 +68,4 @@ lerna-debug.log*
 # Clerk local config (may contain secrets)
 # =============================================================
 /.clerk/
+.vercel

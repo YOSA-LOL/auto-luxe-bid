@@ -15,6 +15,7 @@ import { Route as AuctionsRouteImport } from './routes/auctions'
 import { Route as BrowseRouteImport } from './routes/browse'
 import { Route as CalendarRouteImport } from './routes/calendar'
 import { Route as FavoritesRouteImport } from './routes/favorites'
+import { Route as GetStartedRouteImport } from './routes/get-started'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as OpsX7k9m2RouteImport } from './routes/ops-x7k9m2'
 import { Route as SoldRouteImport } from './routes/sold'
@@ -52,6 +53,11 @@ const CalendarRoute = CalendarRouteImport.update({
 const FavoritesRoute = FavoritesRouteImport.update({
   id: '/favorites',
   path: '/favorites',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GetStartedRoute = GetStartedRouteImport.update({
+  id: '/get-started',
+  path: '/get-started',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -102,6 +108,7 @@ export interface FileRoutesByFullPath {
   '/browse': typeof BrowseRoute
   '/calendar': typeof CalendarRoute
   '/favorites': typeof FavoritesRoute
+  '/get-started': typeof GetStartedRoute
   '/login': typeof LoginRoute
   '/ops-x7k9m2': typeof OpsX7k9m2Route
   '/sold': typeof SoldRoute
@@ -118,6 +125,7 @@ export interface FileRoutesByTo {
   '/browse': typeof BrowseRoute
   '/calendar': typeof CalendarRoute
   '/favorites': typeof FavoritesRoute
+  '/get-started': typeof GetStartedRoute
   '/login': typeof LoginRoute
   '/ops-x7k9m2': typeof OpsX7k9m2Route
   '/sold': typeof SoldRoute
@@ -135,6 +143,7 @@ export interface FileRoutesById {
   '/browse': typeof BrowseRoute
   '/calendar': typeof CalendarRoute
   '/favorites': typeof FavoritesRoute
+  '/get-started': typeof GetStartedRoute
   '/login': typeof LoginRoute
   '/ops-x7k9m2': typeof OpsX7k9m2Route
   '/sold': typeof SoldRoute
@@ -153,6 +162,7 @@ export interface FileRouteTypes {
     | '/browse'
     | '/calendar'
     | '/favorites'
+    | '/get-started'
     | '/login'
     | '/ops-x7k9m2'
     | '/sold'
@@ -169,6 +179,7 @@ export interface FileRouteTypes {
     | '/browse'
     | '/calendar'
     | '/favorites'
+    | '/get-started'
     | '/login'
     | '/ops-x7k9m2'
     | '/sold'
@@ -185,6 +196,7 @@ export interface FileRouteTypes {
     | '/browse'
     | '/calendar'
     | '/favorites'
+    | '/get-started'
     | '/login'
     | '/ops-x7k9m2'
     | '/sold'
@@ -202,6 +214,7 @@ export interface RootRouteChildren {
   BrowseRoute: typeof BrowseRoute
   CalendarRoute: typeof CalendarRoute
   FavoritesRoute: typeof FavoritesRoute
+  GetStartedRoute: typeof GetStartedRoute
   LoginRoute: typeof LoginRoute
   OpsX7k9m2Route: typeof OpsX7k9m2Route
   SoldRoute: typeof SoldRoute
@@ -254,6 +267,13 @@ declare module '@tanstack/react-router' {
       path: '/favorites'
       fullPath: '/favorites'
       preLoaderRoute: typeof FavoritesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/get-started': {
+      id: '/get-started'
+      path: '/get-started'
+      fullPath: '/get-started'
+      preLoaderRoute: typeof GetStartedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -322,6 +342,7 @@ const rootRouteChildren: RootRouteChildren = {
   BrowseRoute: BrowseRoute,
   CalendarRoute: CalendarRoute,
   FavoritesRoute: FavoritesRoute,
+  GetStartedRoute: GetStartedRoute,
   LoginRoute: LoginRoute,
   OpsX7k9m2Route: OpsX7k9m2Route,
   SoldRoute: SoldRoute,

@@ -1,8 +1,12 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+import { LoginForm } from "@/components/auth/LoginForm";
+import { brandPageTitle } from "@/lib/brand";
 
 export const Route = createFileRoute("/login")({
-  beforeLoad: () => {
-    throw redirect({ to: "/sign-in/$", params: { _splat: "" } });
-  },
-  component: () => null,
+  head: () => ({ meta: [{ title: brandPageTitle("Sign In") }] }),
+  component: LoginPage,
 });
+
+function LoginPage() {
+  return <LoginForm />;
+}

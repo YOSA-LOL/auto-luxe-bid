@@ -28,7 +28,7 @@ import { PwaInstallPrompt } from "@/components/PwaInstallPrompt";
 import { FuturisticAmbient } from "@/components/FuturisticAmbient";
 import { ThemeModeProvider, useThemeMode } from "@/lib/theme-mode";
 
-const PUBLIC_PATHS = ["/sign-in", "/sign-up", "/login"];
+const PUBLIC_PATHS = ["/sign-in", "/sign-up", "/login", "/get-started"];
 
 function NavigationProgress() {
   const [mounted, setMounted] = useState(false);
@@ -202,7 +202,7 @@ function AuthGuard({ user }: { user?: SessionUser | null }) {
 
   useEffect(() => {
     if (isLoaded && !isSignedIn && !isPublic) {
-      navigate({ to: "/sign-in/$", replace: true });
+      navigate({ to: "/get-started", replace: true });
     }
   }, [isLoaded, isSignedIn, isPublic]);
 

@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import tsConfigPaths from "vite-tsconfig-paths";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import { nitro } from "nitro/vite";
 import { VitePWA } from "vite-plugin-pwa";
 import { chatWsPlugin } from "./src/lib/vite-ws-plugin";
 
@@ -23,6 +24,8 @@ export default defineConfig({
         },
       },
     }),
+    // Required for Vercel: emits serverless functions + routing (not static Vite dist)
+    nitro(),
     react(),
     VitePWA({
       registerType: "autoUpdate",

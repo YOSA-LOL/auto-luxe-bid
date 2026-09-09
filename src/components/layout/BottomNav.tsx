@@ -10,11 +10,17 @@ const TABS = [
   { to: "/favorites", icon: Heart, labelKey: "nav_saved" as const },
 ] as const;
 
+const AUTH_PATH_PREFIXES = ["/sign-in", "/sign-up", "/login", "/get-started"];
+
 export function BottomNav() {
   const { count } = useFavorites();
   const { location } = useRouterState();
   const { t } = useLanguage();
   const path = location.pathname;
+
+  if (AUTH_PATH_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))) {
+    return null;
+  }
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden">
