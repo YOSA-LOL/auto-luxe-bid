@@ -31,8 +31,8 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg"],
       manifest: {
-        name: "Elite Drive — مزادات سيارات مميزة",
-        short_name: "Elite Drive",
+        name: "Cars Auction — مزادات سيارات مميزة",
+        short_name: "Cars Auction",
         description: "مزادات سيارات مستعملة موثقة. تصفح، زايد، واربح.",
         theme_color: "#0a0a0f",
         background_color: "#0a0a0f",

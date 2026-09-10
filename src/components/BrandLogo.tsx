@@ -70,7 +70,7 @@ export function BrandLogo({
   if (linkToHome) {
     return (
       <Link
-        to="/"
+        to="/home"
         className={cn("group block w-fit", variant === "centered" && "mx-auto", className)}
       >
         {content}

@@ -103,7 +103,7 @@ const translations = {
     seo_home_desc: "Premium used car auctions. Verified inventory, live bidding, secure payments.",
     site_home_title: "Premium Used Car Auctions",
     seo_auctions_desc: "Join live car auctions in real time. Bid and win premium vehicles.",
-    seo_car_desc: "{title} — {year} {brand} {model} for sale at Elite Drive.",
+    seo_car_desc: "{title} — {year} {brand} {model} for sale at Cars Auction.",
     car_page_title: "{title}",
 
     // Reviews
@@ -134,7 +134,7 @@ const translations = {
     car_chat_title: "Chat with us",
 
     // PWA
-    pwa_install_title: "Install Elite Drive",
+    pwa_install_title: "Install Cars Auction",
     pwa_install_desc: "Add to your home screen for quick access to live auctions.",
     pwa_install_btn: "Install App",
 
@@ -212,7 +212,7 @@ const translations = {
     footer_protection: "Buyer Protection",
     footer_verification: "Verification",
     footer_terms: "Terms",
-    footer_copy: "© 2026 Elite Drive. All rights reserved.",
+    footer_copy: "© 2026 Cars Auction. All rights reserved.",
     footer_crafted: "Crafted for collectors.",
 
     // List your car
@@ -490,7 +490,7 @@ const translations = {
     footer_toast_about: "About page coming soon",
     footer_toast_careers: "Careers page coming soon",
     footer_toast_press: "Press kit coming soon",
-    footer_toast_contact: "Contact us at: hello@elitedrive.com",
+    footer_toast_contact: "Contact us at: hello@carsauction.com",
     footer_toast_help: "Help center coming soon",
     footer_toast_protection: "All purchases include full buyer protection",
     footer_toast_verification: "All listings are verified",
@@ -561,7 +561,7 @@ const translations = {
     notif_entry_rejected_body: "Your entry request for {car} was not approved. Upload a new proof to try again.",
 
     sell_hero_badge: "List Your Car",
-    sell_hero_title: "Sell Through Elite Drive",
+    sell_hero_title: "Sell Through Cars Auction",
     sell_hero_p: "Submit your car details and our team will review your listing request. We'll contact you within 24 hours.",
     sell_why_price: "Best Price",
     sell_why_price_d: "Competitive auction pricing",
@@ -1003,7 +1003,7 @@ const translations = {
     seo_home_desc: "مزادات سيارات مميزة. مخزون موثق، مزايدة مباشرة، دفع آمن.",
     site_home_title: "مزادات سيارات مميزة",
     seo_auctions_desc: "انضم لمزادات السيارات المباشرة. زايد واربح سيارات مميزة.",
-    seo_car_desc: "{title} — {brand} {model} {year} للبيع على Elite Drive.",
+    seo_car_desc: "{title} — {brand} {model} {year} للبيع على Cars Auction.",
     car_page_title: "{title}",
 
     // Reviews
@@ -1034,7 +1034,7 @@ const translations = {
     car_chat_title: "تواصل معنا",
 
     // PWA
-    pwa_install_title: "تثبيت Elite Drive",
+    pwa_install_title: "تثبيت Cars Auction",
     pwa_install_desc: "أضف التطبيق للشاشة الرئيسية للوصول السريع للمزادات.",
     pwa_install_btn: "تثبيت التطبيق",
 
@@ -1112,7 +1112,7 @@ const translations = {
     footer_protection: "حماية المشتري",
     footer_verification: "التوثيق",
     footer_terms: "الشروط",
-    footer_copy: "© 2026 Elite Drive. جميع الحقوق محفوظة.",
+    footer_copy: "© 2026 Cars Auction. جميع الحقوق محفوظة.",
     footer_crafted: "صُنع للمحبين.",
 
     // List your car
@@ -1390,7 +1390,7 @@ const translations = {
     footer_toast_about: "صفحة من نحن قريباً",
     footer_toast_careers: "صفحة الوظائف قريباً",
     footer_toast_press: "حزمة الصحافة قريباً",
-    footer_toast_contact: "تواصل معنا: hello@elitedrive.com",
+    footer_toast_contact: "تواصل معنا: hello@carsauction.com",
     footer_toast_help: "مركز المساعدة قريباً",
     footer_toast_protection: "كل المشتريات تشمل حماية كاملة للمشتري",
     footer_toast_verification: "كل الإعلانات موثقة",
@@ -1461,7 +1461,7 @@ const translations = {
     notif_entry_rejected_body: "لم يُقبل طلب الدخول لـ {car}. ارفع إثباتاً جديداً للمحاولة مرة أخرى.",
 
     sell_hero_badge: "أضف سيارتك",
-    sell_hero_title: "بيع عبر Elite Drive",
+    sell_hero_title: "بيع عبر Cars Auction",
     sell_hero_p: "أرسل تفاصيل سيارتك وسيراجع فريقنا طلب الإدراج. سنتواصل معك خلال 24 ساعة.",
     sell_why_price: "أفضل سعر",
     sell_why_price_d: "تسعير مزاد تنافسي",

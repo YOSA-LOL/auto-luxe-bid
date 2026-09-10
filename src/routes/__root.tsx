@@ -28,7 +28,18 @@ import { PwaInstallPrompt } from "@/components/PwaInstallPrompt";
 import { FuturisticAmbient } from "@/components/FuturisticAmbient";
 import { ThemeModeProvider, useThemeMode } from "@/lib/theme-mode";
 
-const PUBLIC_PATHS = ["/sign-in", "/sign-up", "/login", "/get-started"];
+/** Auth / onboarding paths. Do not put bare `/` here — use `isPublicPath` so it does not match every route. */
+const PUBLIC_PATH_PREFIXES = ["/sign-in", "/sign-up", "/login", "/get-started"];
+
+function isPublicPath(pathname: string) {
+  if (pathname === "/") return true;
+  return PUBLIC_PATH_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+/** OAuth callback routes must run even if a session cookie is already present. */
+function isAuthCallbackPath(pathname: string) {
+  return pathname.includes("/sso-callback");
+}
 
 function NavigationProgress() {
   const [mounted, setMounted] = useState(false);
@@ -154,13 +165,15 @@ export const Route = createRootRouteWithContext<{
   }),
   beforeLoad: async ({ location, context }) => {
     const user = context.user !== undefined ? context.user : await getUser();
-    const isPublic = PUBLIC_PATHS.some((p) => location.pathname.startsWith(p));
+    const isPublic = isPublicPath(location.pathname);
     // Only redirect server-side when the server is confident the user IS logged in
-    // and they're trying to visit a public page (e.g. /sign-in while already authed).
-    // The "not logged in → /sign-in" redirect is handled client-side via AuthGuard
+    // and they're trying to visit a public page (e.g. /login while already authed).
+    // The "not logged in → /" redirect is handled client-side via AuthGuard
     // because clerkMiddleware may run in passthrough mode (no valid CLERK_SECRET_KEY),
     // causing getUser() to return null even when the user is genuinely signed in.
-    if (user && isPublic) throw redirect({ to: "/" });
+    if (user && isPublic && !isAuthCallbackPath(location.pathname)) {
+      throw redirect({ to: "/home" });
+    }
     const adminEmails = await getMergedAdminEmailsForLoader();
     return { user, adminEmails };
   },
@@ -198,13 +211,19 @@ function AuthGuard({ user }: { user?: SessionUser | null }) {
   const location = useLocation();
   const { t } = useLanguage();
 
-  const isPublic = PUBLIC_PATHS.some((p) => location.pathname.startsWith(p));
+  const isPublic = isPublicPath(location.pathname);
 
   useEffect(() => {
-    if (isLoaded && !isSignedIn && !isPublic) {
-      navigate({ to: "/get-started", replace: true });
+    if (!isLoaded) return;
+    if (isAuthCallbackPath(location.pathname)) return;
+    if (isSignedIn && isPublic) {
+      navigate({ to: "/home", replace: true });
+      return;
     }
-  }, [isLoaded, isSignedIn, isPublic]);
+    if (!isSignedIn && !isPublic) {
+      navigate({ to: "/", replace: true });
+    }
+  }, [isLoaded, isSignedIn, isPublic, location.pathname, navigate]);
 
   const loadingSplash = (
     <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-background">

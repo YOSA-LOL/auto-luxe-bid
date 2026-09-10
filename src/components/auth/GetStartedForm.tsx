@@ -30,7 +30,7 @@ export function GetStartedForm() {
     try {
       const { error } = await signUp.sso({
         strategy,
-        redirectUrl: "/",
+        redirectUrl: "/home",
         redirectCallbackUrl: "/sign-up/sso-callback",
       });
       if (error) {
@@ -95,16 +95,16 @@ export function GetStartedForm() {
       if (signUp.status === "complete") {
         const fin = await signUp.finalize({
           navigate: async ({ decorateUrl }) => {
-            const url = decorateUrl("/");
+            const url = decorateUrl("/home");
             if (url?.startsWith("http")) window.location.href = url;
-            else navigate({ to: "/" });
+            else navigate({ to: "/home" });
           },
         });
         if (fin.error) {
           toast.error(fin.error.message || t("auth_error_generic"));
           return;
         }
-        navigate({ to: "/" });
+        navigate({ to: "/home" });
         return;
       }
       toast.error(t("auth_error_generic"));

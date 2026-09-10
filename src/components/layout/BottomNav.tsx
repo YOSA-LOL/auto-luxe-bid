@@ -4,7 +4,7 @@ import { useFavorites } from "@/lib/favorites";
 import { useLanguage } from "@/lib/language";
 
 const TABS = [
-  { to: "/", icon: Home, labelKey: "nav_home" as const },
+  { to: "/home", icon: Home, labelKey: "nav_home" as const },
   { to: "/browse", icon: Search, labelKey: "nav_browse" as const },
   { to: "/auctions", icon: Gavel, labelKey: "nav_auctions" as const },
   { to: "/favorites", icon: Heart, labelKey: "nav_saved" as const },
@@ -12,13 +12,18 @@ const TABS = [
 
 const AUTH_PATH_PREFIXES = ["/sign-in", "/sign-up", "/login", "/get-started"];
 
+function isAuthPath(path: string) {
+  if (path === "/") return true;
+  return AUTH_PATH_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));
+}
+
 export function BottomNav() {
   const { count } = useFavorites();
   const { location } = useRouterState();
   const { t } = useLanguage();
   const path = location.pathname;
 
-  if (AUTH_PATH_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))) {
+  if (isAuthPath(path)) {
     return null;
   }
 
@@ -27,7 +32,7 @@ export function BottomNav() {
       <div className="glass-strong border-t border-border/40 neon-header aether-dock-nav pb-safe">
         <div className="flex items-center justify-around h-16 px-2 max-w-lg mx-auto">
           {TABS.map((tab) => {
-            const isActive = tab.to === "/" ? path === "/" : path.startsWith(tab.to);
+            const isActive = tab.to === "/home" ? path === "/home" : path.startsWith(tab.to);
             const isFav = tab.to === "/favorites";
             return (
               <Link

@@ -214,7 +214,7 @@ export function AuthSwitchLink({
 }: {
   prompt: string;
   action: string;
-  to: "/login" | "/get-started";
+  to: "/login" | "/";
 }) {
   return (
     <p className="text-center text-sm text-white/70">

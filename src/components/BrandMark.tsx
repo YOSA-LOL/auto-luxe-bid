@@ -2,7 +2,7 @@ type BrandMarkProps = {
   className?: string;
 };
 
-/** Custom Elite Drive mark — luxury sedan silhouette */
+/** Custom Cars Auction mark — luxury sedan silhouette */
 export function BrandMark({ className = "h-full w-full" }: BrandMarkProps) {
   return (
     <svg

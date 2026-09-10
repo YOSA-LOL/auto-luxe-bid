@@ -521,7 +521,7 @@ function AccountPage() {
               <Button
                 variant="outline"
                 className="glass gap-2 text-destructive hover:bg-destructive/10 hover:border-destructive/40"
-                onClick={() => signOut({ redirectUrl: "/sign-in" })}
+                onClick={() => signOut({ redirectUrl: "/" })}
               >
                 <X className="h-4 w-4" /> {t("account_sign_out")}
               </Button>

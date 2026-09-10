@@ -28,7 +28,7 @@ export function LoginForm() {
     try {
       const { error } = await signIn.sso({
         strategy,
-        redirectUrl: "/",
+        redirectUrl: "/home",
         redirectCallbackUrl: "/sign-in/sso-callback",
       });
       if (error) {
@@ -63,21 +63,21 @@ export function LoginForm() {
       if (signIn.status === "complete") {
         const fin = await signIn.finalize({
           navigate: async ({ decorateUrl }) => {
-            const url = decorateUrl("/");
+            const url = decorateUrl("/home");
             if (url?.startsWith("http")) window.location.href = url;
-            else navigate({ to: "/" });
+            else navigate({ to: "/home" });
           },
         });
         if (fin.error) {
           toast.error(fin.error.message || t("auth_error_generic"));
           return;
         }
-        navigate({ to: "/" });
+        navigate({ to: "/home" });
         return;
       }
 
-      // Extra factors (2FA, etc.) — fall back to Clerk's full sign-in UI
-      navigate({ to: "/sign-in/$", params: { _splat: "" } });
+      // Extra factors (2FA, etc.) — custom login does not cover these yet
+      toast.error(t("auth_error_generic"));
     } catch {
       toast.error(t("auth_error_generic"));
     } finally {
@@ -139,7 +139,7 @@ export function LoginForm() {
         <AuthSwitchLink
           prompt={t("auth_no_account")}
           action={t("auth_create_action")}
-          to="/get-started"
+          to="/"
         />
       </div>
     </AuthMobileShell>

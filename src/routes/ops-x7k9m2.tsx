@@ -55,7 +55,7 @@ export const Route = createFileRoute("/ops-x7k9m2")({
     // key-mismatch mode), we allow the page through so the client-side Clerk
     // check can gate access using adminEmails (from ADMIN_EMAIL env var).
     const user = context.user ?? await getUser();
-    if (user && !user.isAdmin) throw redirect({ to: "/" });
+    if (user && !user.isAdmin) throw redirect({ to: "/home" });
     const isAdmin = user?.isAdmin ?? false;
 
     await markExpiredAuctions();
@@ -194,7 +194,7 @@ function AdminPage() {
   useEffect(() => {
     // Once Clerk has finished loading, anyone who is not an ADMIN_EMAIL account is sent home.
     if (isLoaded && !isAdmin) {
-      navigate({ to: "/", replace: true });
+      navigate({ to: "/home", replace: true });
     }
   }, [isLoaded, isAdmin, navigate]);
 
@@ -421,7 +421,7 @@ function AdminPage() {
       const blob = new Blob([csv], { type: "text/csv" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url; a.download = "elitedrive-inventory.csv"; a.click();
+      a.href = url; a.download = "cars-auction-inventory.csv"; a.click();
       URL.revokeObjectURL(url);
       toast.success(t("toast_csv_exported"));
     } catch {

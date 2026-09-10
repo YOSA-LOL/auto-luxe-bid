@@ -1,33 +1,38 @@
-import { SignUp } from "@clerk/tanstack-react-start";
-import { createFileRoute } from "@tanstack/react-router";
-import { brandPageTitle } from "@/lib/brand";
-import { useLanguage } from "@/lib/language";
-import { getClerkMobileAppearance } from "@/lib/clerk-appearance-mobile";
-import { AuthMobileShell } from "@/components/auth/AuthMobileShell";
+import { HandleSSOCallback } from "@clerk/tanstack-react-start";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 
+/**
+ * Legacy `/sign-up` path. User-facing registration is `/` (Get Started).
+ * Kept only so OAuth can complete at `/sign-up/sso-callback`.
+ */
 export const Route = createFileRoute("/sign-up/$")({
-  head: () => ({ meta: [{ title: brandPageTitle("Create Account") }] }),
-  component: SignUpPage,
+  beforeLoad: ({ params }) => {
+    if (params._splat !== "sso-callback") {
+      throw redirect({ to: "/" });
+    }
+  },
+  component: SsoCallbackPage,
 });
 
-function SignUpPage() {
-  const { t } = useLanguage();
+function SsoCallbackPage() {
+  const navigate = useNavigate();
 
   return (
-    <AuthMobileShell>
-      <div className="w-full">
-        <div className="mb-6 text-center">
-          <h1 className="font-display text-[1.75rem] font-bold text-white">{t("auth_create_title")}</h1>
-          <p className="mt-2 text-sm text-white/65">{t("auth_create_subtitle")}</p>
-        </div>
-        <SignUp
-          routing="path"
-          path="/sign-up"
-          signInUrl="/login"
-          forceRedirectUrl="/"
-          appearance={getClerkMobileAppearance()}
-        />
-      </div>
-    </AuthMobileShell>
+    <HandleSSOCallback
+      navigateToApp={({ decorateUrl }) => {
+        const destination = decorateUrl("/home");
+        if (destination?.startsWith("http")) {
+          window.location.href = destination;
+          return;
+        }
+        void navigate({ to: "/home" });
+      }}
+      navigateToSignIn={() => {
+        void navigate({ to: "/login" });
+      }}
+      navigateToSignUp={() => {
+        void navigate({ to: "/" });
+      }}
+    />
   );
 }

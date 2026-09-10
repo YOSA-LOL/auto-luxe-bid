@@ -1,12 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { GetStartedForm } from "@/components/auth/GetStartedForm";
-import { brandPageTitle } from "@/lib/brand";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
+/** Legacy path — Get Started now lives at `/`. */
 export const Route = createFileRoute("/get-started")({
-  head: () => ({ meta: [{ title: brandPageTitle("Create Account") }] }),
-  component: GetStartedPage,
+  beforeLoad: () => {
+    throw redirect({ to: "/" });
+  },
+  component: () => null,
 });
-
-function GetStartedPage() {
-  return <GetStartedForm />;
-}

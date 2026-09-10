@@ -123,7 +123,7 @@ export function Header() {
 
   const handleSignOut = async () => {
     setMenuOpen(false);
-    await signOut({ redirectUrl: "/sign-in" });
+    await signOut({ redirectUrl: "/" });
   };
 
   const openSearch = () => { setSearchOpen(true); setNotifOpen(false); setSearchQ(""); };
@@ -333,7 +333,7 @@ export function Header() {
               </div>
             ) : (
               <Button asChild variant="ghost" size="icon" className="h-9 w-9">
-                <Link to="/sign-in/$" params={{ _splat: "" }}><User className="h-4 w-4" /></Link>
+                <Link to="/login"><User className="h-4 w-4" /></Link>
               </Button>
             )}
 

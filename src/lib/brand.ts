@@ -1,8 +1,8 @@
-export const BRAND_NAME = "Elite Drive";
+export const BRAND_NAME = "Cars Auction";
 export const BRAND_TAGLINE = "Premium used car auctions";
 export const BRAND_TAGLINE_AR = "مزادات سيارات مميزة";
-export const CONTACT_EMAIL = "hello@elitedrive.com";
-export const INFO_EMAIL = "info@elitedrive.com";
+export const CONTACT_EMAIL = "hello@carsauction.com";
+export const INFO_EMAIL = "info@carsauction.com";
 export const SITE_TITLE = `${BRAND_NAME} — مزادات سيارات مميزة`;
 export const SITE_TITLE_EN = `${BRAND_NAME} — Premium Used Car Auctions`;
 

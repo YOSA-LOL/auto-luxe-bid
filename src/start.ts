@@ -78,7 +78,7 @@ const clerkMw = CLERK_SECRET_KEY
   ? clerkMiddleware({
       secretKey: CLERK_SECRET_KEY,
       publishableKey: CLERK_PUBLISHABLE_KEY,
-      signInUrl: "/sign-in",
+      signInUrl: "/login",
     })
   : createMiddleware().server(async ({ next }) => next());
 

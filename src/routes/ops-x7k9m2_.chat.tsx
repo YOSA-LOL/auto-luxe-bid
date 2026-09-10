@@ -27,7 +27,7 @@ export const Route = createFileRoute("/ops-x7k9m2_/chat")({
   head: () => ({ meta: [{ title: brandPageTitle("Admin Chat") }] }),
   loader: async ({ context }) => {
     const user = context.user ?? await getUser();
-    if (user && !user.isAdmin) throw redirect({ to: "/" });
+    if (user && !user.isAdmin) throw redirect({ to: "/home" });
     const chats = await getAdminChats();
     const adminEmails = await getMergedAdminEmailsForLoader();
     return { chats, isAdmin: user?.isAdmin ?? false, adminEmails };
@@ -56,7 +56,7 @@ function AdminChatPage() {
 
   useEffect(() => {
     if (isLoaded && !isAdmin) {
-      navigate({ to: "/" });
+      navigate({ to: "/home" });
     }
   }, [isLoaded, isAdmin, navigate]);
 
